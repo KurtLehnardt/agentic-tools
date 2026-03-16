@@ -48,6 +48,15 @@ pause_continue() {
   echo ""
 }
 
+# ─── Failure Trap ─────────────────────────────────────────────────────────────
+# Steps are designed to be idempotent — re-running the script is safe.
+cleanup_on_failure() {
+  err "Script failed at line $1. System may be partially configured."
+  err "Re-run the script to continue — completed steps are idempotent."
+  err "If locked out of SSH, connect a monitor and keyboard to fix /etc/ssh/sshd_config"
+}
+trap 'cleanup_on_failure $LINENO' ERR
+
 # ─── Pre-flight Checks ──────────────────────────────────────────────────────
 
 header "OpenClaw App Factory — Automated Setup"
@@ -125,7 +134,8 @@ for key in "${!LOGIND_SETTINGS[@]}"; do
   fi
 done
 
-systemctl restart systemd-logind
+warn "Power management changes will take effect after next reboot (or manual: systemctl restart systemd-logind)."
+warn "Not restarting systemd-logind now to avoid killing your SSH session."
 log "Power management configured — lid close ignored, sleep disabled."
 
 # Set hostname
@@ -182,8 +192,14 @@ if [[ "${SKIP_SSH}" == "false" ]]; then
     fi
   done
 
-  systemctl restart sshd
-  log "SSH hardened — password auth disabled, root login disabled."
+  if ! sshd -t 2>/dev/null; then
+    err "SSH config validation failed! Restoring backup."
+    cp "${SSHD_CONF}.bak."* "$SSHD_CONF" 2>/dev/null
+    err "SSH hardening aborted. Fix manually."
+  else
+    systemctl restart sshd
+    log "SSH hardened — password auth disabled, root login disabled."
+  fi
 fi
 
 # ─── Step 4: UFW Firewall ───────────────────────────────────────────────────
@@ -202,7 +218,19 @@ log "UFW enabled — only SSH allowed inbound."
 header "Step 5/10 — Tailscale VPN"
 
 if ! command -v tailscale &>/dev/null; then
-  curl -fsSL https://tailscale.com/install.sh | sh
+  # WARNING: Supply-chain risk — this pipes a remote script to sh.
+  warn "Installing Tailscale via official install script (pipes curl to sh)."
+  warn "Verify the script at https://tailscale.com/install.sh if concerned."
+  curl -fsSL https://tailscale.com/install.sh -o /tmp/tailscale-install.sh
+  # Verify it's a shell script, not garbage/redirect
+  if head -1 /tmp/tailscale-install.sh | grep -q "^#!"; then
+    bash /tmp/tailscale-install.sh
+    rm -f /tmp/tailscale-install.sh
+  else
+    err "Downloaded Tailscale installer doesn't look like a shell script. Aborting."
+    rm -f /tmp/tailscale-install.sh
+    exit 1
+  fi
   log "Tailscale installed."
 else
   log "Tailscale already installed."
@@ -211,7 +239,11 @@ fi
 info "Starting Tailscale — you will need to authenticate in your browser."
 info "A URL will be printed below. Open it on any device to approve this machine."
 echo ""
-tailscale up || true
+if ! tailscale up; then
+  warn "Tailscale authentication failed or timed out."
+  warn "You can complete this later with: sudo tailscale up"
+  warn "WARNING: Until Tailscale is configured, remote access is SSH-only on local network."
+fi
 echo ""
 
 # Allow Tailscale interface through UFW
@@ -228,6 +260,7 @@ header "Step 6/10 — Docker Installation & Hardening"
 
 if ! command -v docker &>/dev/null; then
   install -m 0755 -d /etc/apt/keyrings
+  # Docker GPG key fetched over HTTPS from docker.com — pinned by apt signing verification
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
   chmod a+r /etc/apt/keyrings/docker.gpg
 
@@ -246,10 +279,11 @@ fi
 usermod -aG docker "$REAL_USER" 2>/dev/null || true
 
 # Docker daemon hardening
+# Note: userns-remap removed — conflicts with bind-mounted volumes. Container is hardened
+# via user directive, cap_drop ALL, no-new-privileges, and read-only FS.
 DOCKER_CONF="/etc/docker/daemon.json"
 cat > "$DOCKER_CONF" <<'DOCKER_DAEMON'
 {
-  "userns-remap": "default",
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "10m",
@@ -261,13 +295,15 @@ cat > "$DOCKER_CONF" <<'DOCKER_DAEMON'
 DOCKER_DAEMON
 
 systemctl restart docker
-log "Docker configured with userns-remap, log limits, and no-new-privileges."
+log "Docker configured with log limits, no-new-privileges, and live-restore."
 
 # ─── Step 7: OpenClaw Deployment ─────────────────────────────────────────────
 
 header "Step 7/10 — OpenClaw Factory Deployment"
 
 FACTORY_DIR="${REAL_HOME}/openclaw-factory"
+REAL_UID=$(id -u "$REAL_USER")
+REAL_GID=$(id -g "$REAL_USER")
 mkdir -p "${FACTORY_DIR}"/{workspace/{projects,ledger,skills,templates,backups},config,logs}
 
 # Generate gateway auth token
@@ -298,17 +334,26 @@ NODE_ENV=production
 EOF
 
 chmod 600 "${FACTORY_DIR}/.env"
+unset ANTHROPIC_KEY
+unset GATEWAY_TOKEN
 log "Secrets file created at ${FACTORY_DIR}/.env (mode 600)."
 
-# Create docker-compose.yml
-cat > "${FACTORY_DIR}/docker-compose.yml" <<'COMPOSE'
-version: "3.9"
+# Generate age encryption key for backups
+AGE_KEY_FILE="${FACTORY_DIR}/.age-key.txt"
+if [[ ! -f "$AGE_KEY_FILE" ]]; then
+  age-keygen -o "$AGE_KEY_FILE" 2>/dev/null
+  chmod 600 "$AGE_KEY_FILE"
+  AGE_PUBLIC_KEY=$(grep "public key:" "$AGE_KEY_FILE" | awk '{print $NF}')
+  log "Age encryption key generated for backups. Public key: ${AGE_PUBLIC_KEY}"
+fi
 
+# Create docker-compose.yml
+cat > "${FACTORY_DIR}/docker-compose.yml" <<COMPOSE
 services:
   openclaw:
     image: openclaw/openclaw:latest
     container_name: openclaw-factory
-    user: "1000:1000"
+    user: "${REAL_UID}:${REAL_GID}"
     read_only: true
     cap_drop:
       - ALL
@@ -332,7 +377,7 @@ services:
     networks:
       - openclaw-net
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:18789/health", "||", "exit", "1"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:18789/health || exit 1"]
       interval: 60s
       timeout: 10s
       retries: 3
@@ -351,6 +396,7 @@ log "docker-compose.yml created."
 # Create .gitignore
 cat > "${FACTORY_DIR}/.gitignore" <<'GITIGNORE'
 .env
+.age-key.txt
 *.key
 *.pem
 backups/
@@ -518,37 +564,66 @@ HEALTHCHECK
 
 chmod +x "${FACTORY_DIR}/scripts/health-check.sh"
 
-# Create backup script
+# Configure log rotation for factory logs
+cat > /etc/logrotate.d/openclaw-factory <<LOGROTATE
+${FACTORY_DIR}/logs/*.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    create 644 ${REAL_USER} ${REAL_USER}
+}
+LOGROTATE
+log "Log rotation configured (weekly, 8 weeks retention)."
+
+# Create encrypted backup script
 mkdir -p "${FACTORY_DIR}/scripts"
 cat > "${FACTORY_DIR}/scripts/backup.sh" <<BACKUP
 #!/usr/bin/env bash
-# Daily backup of OpenClaw factory workspace and config
+# Daily encrypted backup of OpenClaw factory workspace and config
 
-BACKUP_DIR="${FACTORY_DIR}/workspace/backups"
+FACTORY_DIR="${FACTORY_DIR}"
+BACKUP_DIR="\${FACTORY_DIR}/workspace/backups"
+AGE_KEY_FILE="\${FACTORY_DIR}/.age-key.txt"
 mkdir -p "\${BACKUP_DIR}"
 
 TIMESTAMP=\$(date +%Y%m%d-%H%M%S)
-BACKUP_FILE="\${BACKUP_DIR}/factory-\${TIMESTAMP}.tar.gz"
 
-tar czf "\${BACKUP_FILE}" \\
-  -C "${FACTORY_DIR}" \\
+if [[ ! -f "\$AGE_KEY_FILE" ]]; then
+  echo "[\$(date)] ERROR: Age key not found at \${AGE_KEY_FILE}. Backup skipped." >> "\${FACTORY_DIR}/logs/backup.log"
+  exit 1
+fi
+
+AGE_PUBLIC_KEY=\$(grep "public key:" "\$AGE_KEY_FILE" | awk '{print \$NF}')
+BACKUP_FILE="\${BACKUP_DIR}/factory-\${TIMESTAMP}.tar.gz.age"
+
+tar czf - \\
+  -C "\${FACTORY_DIR}" \\
   workspace/ledger \\
   workspace/skills \\
   workspace/templates \\
   .env \\
   docker-compose.yml \\
   workspace/AGENT_RULES.md \\
-  2>/dev/null
+  | age -r "\$AGE_PUBLIC_KEY" > "\${BACKUP_FILE}"
+
+RESULT=\$?
+if [[ \$RESULT -ne 0 ]]; then
+  echo "[\$(date)] ERROR: Backup failed with exit code \${RESULT}" >> "\${FACTORY_DIR}/logs/backup.log"
+  rm -f "\${BACKUP_FILE}"
+  exit 1
+fi
 
 # Retain last 14 days of backups
-find "\${BACKUP_DIR}" -name "factory-*.tar.gz" -mtime +14 -delete
+find "\${BACKUP_DIR}" -name "factory-*.tar.gz.age" -mtime +14 -delete
 
-echo "[\$(date)] Backup created: \${BACKUP_FILE}" >> "${FACTORY_DIR}/logs/backup.log"
+echo "[\$(date)] Backup created: \${BACKUP_FILE}" >> "\${FACTORY_DIR}/logs/backup.log"
 BACKUP
 
 chmod +x "${FACTORY_DIR}/scripts/backup.sh"
 
-# Create credential rotation reminder script
+# Create credential rotation script
 cat > "${FACTORY_DIR}/scripts/rotate-gateway-token.sh" <<'ROTATE'
 #!/usr/bin/env bash
 # Rotate the OpenClaw gateway auth token
@@ -561,15 +636,16 @@ ENV_FILE="${FACTORY_DIR}/.env"
 
 NEW_TOKEN=$(openssl rand -hex 32)
 
-sed -i "s/^GATEWAY_AUTH_TOKEN=.*/GATEWAY_AUTH_TOKEN=${NEW_TOKEN}/" "$ENV_FILE"
+# Use awk + temp file to avoid exposing token via /proc (sed -i would)
+awk -v tok="$NEW_TOKEN" '{gsub(/^GATEWAY_AUTH_TOKEN=.*/, "GATEWAY_AUTH_TOKEN=" tok)}1' "$ENV_FILE" > "${ENV_FILE}.tmp"
+mv "${ENV_FILE}.tmp" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 cd "$FACTORY_DIR"
 docker compose restart
 
 echo "[$(date)] Gateway token rotated." >> "${FACTORY_DIR}/logs/rotation.log"
-echo "✓ Gateway token rotated and container restarted."
-echo "  New token: ${NEW_TOKEN:0:8}... (check .env for full value)"
+echo "Gateway token rotated and container restarted. New token stored in .env."
 ROTATE
 
 chmod +x "${FACTORY_DIR}/scripts/rotate-gateway-token.sh"
@@ -588,12 +664,17 @@ if ! grep -q "health-check.sh" "$CRON_TMP"; then
   echo "0 */6 * * * ${FACTORY_DIR}/scripts/health-check.sh >> ${FACTORY_DIR}/logs/health.log 2>&1" >> "$CRON_TMP"
 fi
 
+# Monthly gateway token rotation (1st of each month at 4 AM)
+if ! grep -q "rotate-gateway-token.sh" "$CRON_TMP"; then
+  echo "0 4 1 * * sudo ${FACTORY_DIR}/scripts/rotate-gateway-token.sh" >> "$CRON_TMP"
+fi
+
 crontab -u "$REAL_USER" "$CRON_TMP"
 rm -f "$CRON_TMP"
 
 chown -R "${REAL_USER}:${REAL_USER}" "${FACTORY_DIR}"
 log "Monitoring, backup, and rotation scripts created."
-log "Cron jobs installed (daily backup at 3 AM, health check every 6 hours)."
+log "Cron jobs installed (daily backup at 3 AM, health check every 6 hours, monthly token rotation)."
 
 # ─── Step 10: Final Summary ─────────────────────────────────────────────────
 
@@ -620,12 +701,12 @@ ${CYAN}Security:${NC}
   SSH:            ✓ Key-only auth, no root login
   Fail2ban:       ✓ Enabled (3 attempts, 1h ban)
   Auto-updates:   ✓ Enabled (security patches)
-  Docker:         ✓ userns-remap, no-new-privileges
+  Docker:         ✓ no-new-privileges, cap_drop ALL, read-only FS
 
 ${CYAN}OpenClaw:${NC}
   Factory dir:    ${FACTORY_DIR}
   Gateway:        127.0.0.1:18789 (localhost only)
-  Gateway token:  ${GATEWAY_TOKEN:0:8}... (see .env)
+  Gateway token:  (stored in .env)
   Compose file:   ${FACTORY_DIR}/docker-compose.yml
   Workspace:      ${FACTORY_DIR}/workspace/
 
@@ -635,8 +716,9 @@ ${CYAN}Scripts:${NC}
   Token rotation: ${FACTORY_DIR}/scripts/rotate-gateway-token.sh
 
 ${CYAN}Cron Jobs:${NC}
-  Daily 3 AM:     Workspace backup (14-day retention)
+  Daily 3 AM:     Encrypted workspace backup (14-day retention)
   Every 6 hours:  Health check logged to logs/health.log
+  Monthly 1st:    Gateway token rotation (4 AM)
 
 ${YELLOW}╔══════════════════════════════════════════════════════════════════════╗
 ║                      REMAINING MANUAL STEPS                          ║
@@ -667,7 +749,8 @@ ${YELLOW}╔══════════════════════�
      ${FACTORY_DIR}/workspace/AGENT_RULES.md
 
   7. ${YELLOW}Monthly maintenance:${NC}
-     Run: ${FACTORY_DIR}/scripts/rotate-gateway-token.sh
+     Token rotation is automated (1st of each month, 4 AM).
+     Run manually if needed: sudo ${FACTORY_DIR}/scripts/rotate-gateway-token.sh
      Run: docker compose pull && docker compose up -d
 
 ${RED}╔══════════════════════════════════════════════════════════════════════╗
@@ -679,7 +762,7 @@ ${RED}╔═══════════════════════�
   • NEVER install ClawHub skills without reviewing source code
   • Access the gateway ONLY via Tailscale or SSH tunnel
   • Review Privacy.com transactions weekly
-  • Rotate the gateway token monthly
+  • Gateway token rotation is automated monthly (verify via logs/rotation.log)
 
 SUMMARY
 

@@ -60,7 +60,7 @@ The script is interactive — it will pause at steps requiring your input (Tails
 | 3 | Harden SSH (key-only auth, no root login, fail limit of 3) |
 | 4 | Configure UFW firewall (deny all inbound except SSH + Tailscale) |
 | 5 | Install Tailscale VPN for secure remote access |
-| 6 | Install Docker with userns-remap, log limits, no-new-privileges |
+| 6 | Install Docker with log limits and no-new-privileges |
 | 7 | Deploy OpenClaw in a hardened Docker container (read-only FS, all caps dropped, localhost-only gateway, resource limits) |
 | 8 | Configure fail2ban and unattended security upgrades |
 | 9 | Create monitoring, backup, and credential rotation scripts with cron jobs |
@@ -73,6 +73,7 @@ The script is interactive — it will pause at steps requiring your input (Tails
 ├── docker-compose.yml        # Hardened OpenClaw container config
 ├── .env                      # Secrets (API key, gateway token) — mode 600
 ├── .gitignore
+├── .age-key.txt              # Age encryption key for backups — mode 600
 ├── config/
 ├── logs/
 │   ├── backup.log
@@ -80,7 +81,7 @@ The script is interactive — it will pause at steps requiring your input (Tails
 │   └── rotation.log
 ├── scripts/
 │   ├── health-check.sh       # System + container health report
-│   ├── backup.sh             # Daily workspace backup (14-day retention)
+│   ├── backup.sh             # Daily encrypted workspace backup (14-day retention)
 │   └── rotate-gateway-token.sh  # Monthly gateway token rotation
 └── workspace/
     ├── projects/             # Individual app projects
@@ -89,7 +90,7 @@ The script is interactive — it will pause at steps requiring your input (Tails
     │   └── accounts.json     # Registry of created accounts
     ├── skills/               # Custom OpenClaw skills
     ├── templates/            # Project scaffolding templates
-    ├── backups/              # Automated backup archives
+    ├── backups/              # Encrypted backup archives (.tar.gz.age)
     └── AGENT_RULES.md        # Agent behavior rules and constraints
 ```
 
@@ -130,7 +131,7 @@ Prints system uptime, memory, disk, CPU temps, Docker container status, and Tail
 
 ### `scripts/backup.sh`
 
-Backs up the workspace ledger, skills, templates, agent rules, and secrets to a timestamped tarball. Retains 14 days. Runs daily at 3 AM via cron.
+Backs up the workspace ledger, skills, templates, agent rules, and secrets to an age-encrypted timestamped tarball. Retains 14 days. Runs daily at 3 AM via cron. To decrypt a backup: `age -d -i ~/openclaw-factory/.age-key.txt backup-file.tar.gz.age > backup.tar.gz`
 
 ```bash
 ./scripts/backup.sh
@@ -138,7 +139,7 @@ Backs up the workspace ledger, skills, templates, agent rules, and secrets to a 
 
 ### `scripts/rotate-gateway-token.sh`
 
-Generates a new random gateway auth token, updates `.env`, and restarts the container. Run this monthly.
+Generates a new random gateway auth token, updates `.env`, and restarts the container. Runs automatically on the 1st of each month at 4 AM via cron.
 
 ```bash
 sudo ./scripts/rotate-gateway-token.sh
@@ -150,10 +151,10 @@ This setup implements defense in depth:
 
 - **Network layer** — UFW denies all inbound except SSH and Tailscale. The OpenClaw gateway port (18789) is bound to localhost only and is never exposed to the internet. Remote access is exclusively through Tailscale VPN.
 - **Host layer** — SSH is key-only with no root login. Fail2ban blocks brute-force attempts. Unattended-upgrades patches security vulnerabilities automatically.
-- **Container layer** — OpenClaw runs as a non-root user in a read-only container with all Linux capabilities dropped, no-new-privileges set, and resource limits enforced. Docker userns-remap ensures container root maps to an unprivileged host user.
+- **Container layer** — OpenClaw runs as a non-root user in a read-only container with all Linux capabilities dropped, no-new-privileges set, and resource limits enforced. User namespace remapping was intentionally omitted to avoid permission conflicts with bind-mounted workspace volumes; security is enforced via the user directive, capability dropping, and read-only filesystem instead.
 - **Application layer** — Gateway requires a 256-bit auth token. Messaging channels are restricted via allowFrom whitelists. Tool access follows least-privilege via tools.profile. Sandbox mode is enabled for command execution.
 - **Financial layer** — Privacy.com virtual cards enforce hard monthly spend limits per category. Cards auto-decline transactions over budget. No real bank credentials are ever given to the agent.
-- **Credential layer** — All secrets live in a single `.env` file with 600 permissions. Gateway tokens are rotated monthly. The agent is prohibited from storing credentials in chat logs or session transcripts.
+- **Credential layer** — All secrets live in a single `.env` file with 600 permissions. Gateway tokens are rotated monthly via automated cron job. Backups are encrypted with age. The agent is prohibited from storing credentials in chat logs or session transcripts.
 
 ## Known Risks
 
@@ -161,6 +162,7 @@ This setup implements defense in depth:
 - **ClawHub skills are community-uploaded code.** Malicious skills have been documented. Only install skills you have personally reviewed.
 - **Prompt injection is a real threat.** Any untrusted content the agent reads (web pages, emails, fetched URLs) could contain injection attempts. Use frontier models (Claude Sonnet 4 / Opus 4) which are more robust, and treat all external content as untrusted in your skill prompts.
 - **Laptops are not servers.** Monitor thermals, keep the lid open or on a cooling pad, and check CPU temps regularly. The health check script automates this.
+- **Docker image is pulled without digest pinning.** The compose file uses `openclaw/openclaw:latest` which trusts Docker Hub. For higher assurance, pin to a specific digest after verifying: `docker pull openclaw/openclaw:latest && docker inspect --format='{{index .RepoDigests 0}}' openclaw/openclaw:latest` and replace the image tag in `docker-compose.yml` with the digest.
 
 ## Troubleshooting
 
@@ -173,6 +175,7 @@ This setup implements defense in depth:
 | Budget exceeded | Pause the relevant Privacy.com card immediately, review `spend-log.json` |
 | Unexpected charges | Pause all cards, stop the container (`docker compose down`), audit session logs |
 | Docker permission denied | Log out and back in after setup (docker group takes effect on new session) |
+| Script failed mid-run | The script is idempotent — re-run it safely. If SSH is locked out, connect a monitor and keyboard, restore `/etc/ssh/sshd_config` from the `.bak.*` backup, and restart sshd |
 
 ## License
 
