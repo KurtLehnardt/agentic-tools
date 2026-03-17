@@ -1,6 +1,10 @@
 {
   "name": "agentic-tools",
-  "description": "Orchestrator pipeline for Claude Code: plan → review → decompose → parallel workers → critic → merge",
   "version": "1.0.0",
-  "author": "KurtLehnardt"
+  "description": "Orchestrator pipeline for Claude Code: plan, review, decompose, parallel workers, critic, merge",
+  "author": {
+    "name": "KurtLehnardt"
+  },
+  "skills": "./skills/",
+  "keywords": ["orchestrator", "build", "pipeline", "worker", "agent"]
 }

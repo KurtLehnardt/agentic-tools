@@ -1,0 +1,21 @@
+{
+  "name": "agentic-tools-marketplace",
+  "owner": {
+    "name": "KurtLehnardt"
+  },
+  "metadata": {
+    "description": "Orchestrator pipeline for Claude Code: plan, review, decompose, parallel workers, critic, merge",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "agentic-tools",
+      "source": "./",
+      "description": "Orchestrator pipeline for Claude Code: plan → review → decompose → parallel workers → critic → merge",
+      "version": "1.0.0",
+      "keywords": ["orchestrator", "build", "pipeline", "worker", "agent"],
+      "category": "productivity",
+      "skills": "./skills/"
+    }
+  ]
+}
