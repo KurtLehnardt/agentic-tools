@@ -189,7 +189,17 @@ If stuck after 3 attempts on a step, output BLOCKED: [reason] in your response (
 
 ### Fallback: Subagent Workers
 
-If the ralph-loop plugin is not installed or not available, fall back to one-shot subagent workers:
+If the ralph-loop plugin is not installed or not available:
+
+1. **Notify the user in the console:**
+
+   > **ralph-loop plugin not detected.** Install it for iterative, self-correcting workers:
+   >
+   >     /plugin install ralph-skills@ralph-marketplace
+   >
+   > Continuing with one-shot subagent workers. The build will still complete, but workers won't auto-retry on failures or self-validate in a loop.
+
+2. Fall back to one-shot subagent workers:
 
 ```
 Subagent: Task tool, subagent_type="general-purpose"
@@ -299,7 +309,7 @@ If this fails, diagnose which merge introduced the break and re-dispatch a ralph
 → Dispatch a ralph-loop to resolve the conflict in the target branch. The worker should only resolve the conflict, not add new features.
 
 ### Ralph-loop plugin not available
-→ Fall back to one-shot subagent workers (Phase 5 fallback). Log a warning: "ralph-loop plugin not installed. Using one-shot subagents."
+→ Print to console: "**ralph-loop plugin not detected.** Install it with: `/plugin install ralph-skills@ralph-marketplace` — the build will still work using one-shot subagents, but without iterative self-correction." Then fall back to one-shot subagent workers (Phase 5 fallback).
 
 ## Commit Convention
 
