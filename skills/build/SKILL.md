@@ -1,12 +1,12 @@
 ---
 name: build
-description: "Orchestrate a full implementation pipeline: plan, architect review, executive review, task decomposition, parallel worker agents, critic review, merge. Trigger: build this, implement this, orchestrate this."
+description: "Orchestrate a full implementation pipeline: plan, architect review, executive review, task decomposition, parallel ralph-loop workers, babysit supervisor, critic review, merge. Trigger: build this, implement this, orchestrate this."
 user-invocable: true
 ---
 
 # /build — Orchestrated Implementation Pipeline
 
-You are an **orchestrator** executing a 7-phase implementation pipeline. You do not write code. You dispatch subagents, gate each phase on review scores, and manage the full lifecycle from plan to merge.
+You are an **orchestrator** executing a 7-phase implementation pipeline. You do not write code. You dispatch subagents and ralph-loops, gate each phase on review scores, and manage the full lifecycle from plan to merge.
 
 ## Phase Overview
 
@@ -15,7 +15,7 @@ Phase 1: ROADMAP        → Explore codebase, produce implementation plan
 Phase 2: ARCHITECT       → Technical review (>= 9.5 to proceed)
 Phase 3: EXECUTIVE       → Product/UX review (>= 9.5 to proceed)
 Phase 4: DECOMPOSE       → Break plan into worktree-safe tasks
-Phase 5: RALPH SWARM     → Parallel worker agents on isolated worktrees
+Phase 5: RALPH SWARM     → Dispatch ralph-loop workers + babysit supervisor
 Phase 6: CRITIC          → Code review per worker (>= 9.5 to commit)
 Phase 7: MERGE & CLEANUP → Merge approved branches, remove worktrees
 ```
@@ -111,15 +111,41 @@ For each task, define:
 
 ### Iteration Limits by Complexity
 
-| Complexity | Max Turns | Examples |
-|------------|-----------|----------|
-| S (Small)  | 20        | Config changes, simple utilities |
-| M (Medium) | 35        | API endpoints, component implementations |
-| L (Large)  | 50        | Complex features, test suites |
+**Ralph-loop workers** (iterative, self-correcting):
+
+| Complexity | Max Iterations | Examples |
+|------------|---------------|----------|
+| S (Small)  | 10            | Config changes, simple utilities |
+| M (Medium) | 20            | API endpoints, component implementations |
+| L (Large)  | 35            | Complex features, test suites |
+
+**Fallback one-shot subagent workers** (no retry loop — need more headroom):
+
+| Complexity | Max Turns |
+|------------|-----------|
+| S (Small)  | 20        |
+| M (Medium) | 35        |
+| L (Large)  | 50        |
 
 ## Phase 5: RALPH SWARM
 
-For each task from Phase 4, dispatch a **Ralph worker** subagent on an isolated git worktree.
+For each task from Phase 4, dispatch a **ralph-loop** worker. The ralph-loop plugin creates a self-correcting iterative loop — the worker keeps running until it outputs the completion promise or hits the max iteration limit.
+
+### Start the Babysit Supervisor
+
+**Before dispatching any workers**, start the `/babysit` supervisor on a 5-minute cron:
+
+```
+/loop 5m /babysit
+```
+
+This runs in the background and monitors all active worker worktrees. It:
+- Compares each worker's git progress against their assigned plan steps
+- Detects stalls, scope drift, repeated failures, and blocked workers
+- Writes a `NUDGE.md` file (atomically) into any drifting worker's worktree with their original assignment and corrective instructions
+- Workers read and act on `NUDGE.md` at the start of each ralph-loop iteration, then delete it
+
+**Stopping the babysitter:** The babysitter auto-stops when it detects zero active `build/*` worktrees (normal shutdown after Phase 7 cleanup), or after a hard limit of 2 hours (24 ticks). You can also stop it manually with `/loop stop` or `Ctrl+C`.
 
 ### Worktree Setup
 
@@ -127,47 +153,99 @@ Before dispatching each worker:
 
 ```bash
 git fetch origin
-# Create worktree from the base branch (main or feature branch)
 git worktree add .claude/worktrees/tNN-description origin/main -b build/tNN-description
+echo "NUDGE.md" >> .claude/worktrees/tNN-description/.gitignore
+echo ".NUDGE.md.tmp" >> .claude/worktrees/tNN-description/.gitignore
 ```
 
-### Worker Dispatch
+The `.gitignore` entries prevent workers from accidentally staging or committing supervisor artifacts.
+
+### Worker Dispatch via Ralph Loop
+
+For each task, write a prompt file and dispatch via `/ralph-loop`. The prompt includes the worker instructions, assigned steps, file list, and the full plan for context.
+
+**Build the ralph-loop prompt** by combining:
+1. The contents of `references/ralph-worker-prompt.md` (worker persona + rules + NUDGE.md protocol)
+2. The task-specific context (assigned steps, files, plan)
+3. Inline critic instructions — the worker must self-review before declaring complete
 
 ```
-Subagent: Task tool, subagent_type="general-purpose", isolation="worktree"
-Prompt: [contents of references/ralph-worker-prompt.md]
+/ralph-loop "
+[contents of references/ralph-worker-prompt.md]
 
-        Your assigned task: [TASK_ID]
-        Your assigned steps from the plan:
-        [SUBSET_OF_PLAN_STEPS]
+## Your Assignment
 
-        Files you are authorized to modify:
-        [FILE_LIST]
+Task: [TASK_ID]
+Branch: build/tNN-description
+Working directory: .claude/worktrees/tNN-description
 
-        Full approved plan (for context only — only execute YOUR steps):
-        [FULL_PLAN]
+### Assigned steps:
+[SUBSET_OF_PLAN_STEPS]
 
-        Execute each step. Validate after each. Commit after each.
-        Output TASK_COMPLETE when done.
+### Files you own (exclusive):
+[FILE_LIST]
+
+### Full plan (context only — execute YOUR steps only):
+[FULL_PLAN]
+
+## Self-Review Before Completion
+
+Before outputting the completion promise, you MUST:
+1. Run: npm test && npm run build && npx tsc --noEmit
+2. Review your own git diff against the base branch
+3. Check that ALL assigned steps are implemented
+4. Verify no files outside your scope were modified
+5. Ensure all commits follow conventional commit format
+
+Only output <promise>TASK_COMPLETE</promise> when ALL of the above pass.
+If stuck after 3 attempts on a step, output BLOCKED: [reason] in your response (but do NOT output the completion promise).
+" --max-iterations [COMPLEXITY_LIMIT] --completion-promise "TASK_COMPLETE"
 ```
 
 ### Parallelism Rules
 
-- **Independent tasks** (no dependency edges) → dispatch simultaneously using multiple Task tool calls in one message.
-- **Dependent tasks** → dispatch sequentially. Wait for the dependency to complete and its critic review to pass before dispatching the dependent task.
-- **Maximum concurrent workers**: 4. Queue additional tasks if more than 4 are independent.
+- **Independent tasks** (no dependency edges) → dispatch simultaneously.
+- **Dependent tasks** → dispatch sequentially. Wait for the dependency's ralph-loop to complete (outputs `TASK_COMPLETE`) before starting the dependent task.
+- **Maximum concurrent workers: 4.** Queue additional independent tasks if more than 4 are ready. When a worker completes, dispatch the next queued task. In a single-session environment where ralph-loops must run sequentially, dispatch one at a time and note the reduced parallelism in the Phase 4 status report.
 
 ### Worker Monitoring
 
-- If a worker outputs `BLOCKED: [reason]` → assess the blocker. If it's a missing dependency from another task, wait. If it's a design issue, re-dispatch the planner for that specific step.
-- If a worker exceeds its iteration limit without `TASK_COMPLETE` → stop it, log the state, and either re-dispatch with remaining steps or escalate.
+- The ralph-loop plugin handles iteration automatically via the Stop hook.
+- Each iteration, the worker sees its previous work in files and git history.
+- The `/babysit` supervisor checks every 5 minutes and writes `NUDGE.md` into worktrees that are stalled, drifting, or stuck. Workers read and delete the nudge file each iteration.
+- If the worker outputs `BLOCKED: [reason]`, the babysitter detects this and reports it to the console.
+- If max iterations reached without `TASK_COMPLETE`, the loop stops. Assess the state and either:
+  - Re-dispatch with remaining steps and higher iteration limit (+50%)
+  - Escalate to human
+
+### Fallback: Subagent Workers
+
+If the ralph-loop plugin is not installed or not available:
+
+1. **Notify the user in the console:**
+
+   > **ralph-loop plugin not detected.** Install it for iterative, self-correcting workers:
+   >
+   >     /plugin install ralph-skills@ralph-marketplace
+   >
+   > Continuing with one-shot subagent workers. The build will still complete, but workers won't auto-retry on failures or self-validate in a loop.
+
+2. Fall back to one-shot subagent workers using the **fallback iteration limits** (20/35/50 turns instead of 10/20/35):
+
+```
+Subagent: Task tool, subagent_type="general-purpose"
+Prompt: [same prompt as above, but without ralph-loop wrapper]
+        Output TASK_COMPLETE when done.
+```
+
+**Note:** The `/babysit` supervisor still works with one-shot subagent workers — it monitors worktree git state regardless of dispatch method. However, one-shot workers cannot read `NUDGE.md` mid-execution since they don't iterate. The nudge report is still useful for the human to see which workers are struggling.
 
 ## Phase 6: CRITIC REVIEW
 
-After each worker completes, dispatch a **Critic** subagent to review the worker's code changes.
+After each worker's ralph-loop completes (outputs `TASK_COMPLETE`), dispatch a **Critic** subagent to review the worker's code changes. The critic runs as a separate subagent (NOT a ralph-loop) since it's a one-shot review.
 
 ```
-Subagent: Task tool, subagent_type="general-purpose", isolation="worktree"
+Subagent: Task tool, subagent_type="general-purpose"
 Prompt: [contents of references/critic-review-prompt.md]
 
         Task requirements:
@@ -175,6 +253,8 @@ Prompt: [contents of references/critic-review-prompt.md]
 
         Approved plan:
         [FULL_PLAN]
+
+        Working directory: .claude/worktrees/tNN-description
 
         Review the git diff against the base branch.
         Run validation: npm test && npm run build && npx tsc --noEmit
@@ -184,13 +264,27 @@ Prompt: [contents of references/critic-review-prompt.md]
 **Gate logic:**
 - Parse the `|||CRITIC_REVIEW|||` JSON block.
 - If `weighted_score >= 9.5` and `verdict == "APPROVED"` → mark task as ready to merge.
-- If `verdict == "REVISE"` → extract `blocking_issues`, re-dispatch the same ralph worker on the same worktree with the feedback. The worker should fix only the blocking issues.
-- Maximum 5 review iterations per task. After 5 → escalate to human.
+- If `verdict == "REVISE"` → extract `blocking_issues`, re-dispatch a new ralph-loop on the SAME worktree with the feedback appended to the prompt:
+
+```
+/ralph-loop "
+[original worker prompt]
+
+## CRITIC FEEDBACK — FIX THESE ISSUES:
+[blocking_issues from critic]
+
+Fix ONLY the blocking issues listed above. Do not re-implement completed steps.
+Run validation after fixes. Output <promise>FIXES_COMPLETE</promise> when done.
+" --max-iterations 10 --completion-promise "FIXES_COMPLETE"
+```
+
+- When the `FIXES_COMPLETE` ralph-loop finishes, re-run the same critic review. This counts as one review cycle.
+- Maximum 5 critic review cycles per task (initial + fix rounds). After 5 → escalate to human.
 
 ### Critic Dispatch Rules
 
 - Review each worker independently. Do not batch reviews.
-- The critic runs in the SAME worktree as the worker (to see the code).
+- The critic reads code from the worker's worktree.
 - If the critic finds file scope violations, that's an automatic fail regardless of score.
 
 ## Phase 7: MERGE & CLEANUP
@@ -204,7 +298,7 @@ Once all tasks pass critic review:
    ```bash
    npm test && npm run build && npx tsc --noEmit
    ```
-3. If merge conflicts occur, resolve them or re-dispatch a worker to handle the conflict.
+3. If merge conflicts occur, resolve them or re-dispatch a ralph-loop to handle the conflict.
 
 ### Merge Commands
 
@@ -221,6 +315,8 @@ git worktree remove .claude/worktrees/tNN-description
 git branch -d build/tNN-description
 ```
 
+Remove any remaining `NUDGE.md` files from worktrees before deleting them. Once all worktrees are removed, the babysitter's next tick will find zero `build/*` worktrees and auto-stop.
+
 ### Final Validation
 
 After ALL tasks are merged, run the full validation suite one final time:
@@ -228,7 +324,7 @@ After ALL tasks are merged, run the full validation suite one final time:
 npm test && npm run build && npx tsc --noEmit
 ```
 
-If this fails, diagnose which merge introduced the break and re-dispatch a worker to fix it.
+If this fails, diagnose which merge introduced the break and re-dispatch a ralph-loop to fix it.
 
 ## Error Recovery
 
@@ -238,14 +334,17 @@ If this fails, diagnose which merge introduced the break and re-dispatch a worke
 ### Plan rejected 3 times by executive
 → Report to human: "Executive review failed 3 times. The requirements may need clarification. Key feedback: [list]."
 
-### Worker stuck (exceeds iteration limit)
-→ Stop the worker. Log completed steps. Re-dispatch with only remaining steps and a higher iteration limit (+50%).
+### Worker stuck (ralph-loop hits max iterations)
+→ Log completed steps from the worktree's git history. Re-dispatch with only remaining steps and a higher iteration limit (+50%).
 
 ### Critic rejects 5 times
 → Report to human: "Task tNN failed critic review 5 times. Latest score: X.X. Persistent issues: [list]. Recommend manual review."
 
 ### Merge conflict
-→ Dispatch a worker to resolve the conflict in the target branch. The worker should only resolve the conflict, not add new features.
+→ Dispatch a ralph-loop to resolve the conflict in the target branch. The worker should only resolve the conflict, not add new features.
+
+### Ralph-loop plugin not available
+→ Print to console: "**ralph-loop plugin not detected.** Install it with: `/plugin install ralph-skills@ralph-marketplace` — the build will still work using one-shot subagents, but without iterative self-correction." Then fall back to one-shot subagent workers (Phase 5 fallback) with the higher turn limits (20/35/50).
 
 ## Commit Convention
 
@@ -267,8 +366,8 @@ After each phase completes, report to the human:
 - **Phase 1 complete**: "Plan produced: N steps, estimated complexity: [S/M/L distribution]"
 - **Phase 2 complete**: "Architect approved: score X.X/10"
 - **Phase 3 complete**: "Executive approved: score X.X/10"
-- **Phase 4 complete**: "Decomposed into N tasks. M parallel, K sequential. Dispatching workers."
-- **Phase 5 complete**: "All N workers complete. Dispatching critics."
+- **Phase 4 complete**: "Decomposed into N tasks. M parallel, K sequential. Dispatching ralph-loops + babysit supervisor."
+- **Phase 5 complete**: "All N ralph-loops complete. Babysit stopped. Dispatching critics."
 - **Phase 6 complete**: "All N tasks approved by critic. Scores: [list]. Merging."
 - **Phase 7 complete**: "All tasks merged. Final validation passed. Done."
 
