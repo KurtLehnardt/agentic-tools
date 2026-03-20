@@ -16,7 +16,22 @@ Start the babysitter on a ~5-minute cron using the `/loop` skill:
 /loop 5m /babysit
 ```
 
-This runs `/babysit` every 5 minutes until manually stopped. You can also run it once for a spot-check.
+This runs `/babysit` every 5 minutes until stopped. You can also run it once for a spot-check.
+
+### Stopping the Babysitter
+
+To stop the cron loop:
+- **From the orchestrator:** Run `/loop stop` to cancel the active `/babysit` loop.
+- **Manually:** Press `Ctrl+C` in the terminal running the loop, or close the session.
+- **Auto-stop:** The babysitter automatically exits (outputs nothing, does not reschedule) when it detects **zero active `build/*` worktrees**. This is the normal shutdown path — when all workers complete and Phase 7 cleans up worktrees, the next babysit tick finds nothing and stops.
+
+### Maximum Duration
+
+The babysitter has a hard limit of **2 hours (24 ticks at 5-minute intervals)**. If this limit is reached, it outputs a final console report with a warning:
+
+> **Babysit auto-stopped after 2 hours.** If workers are still running, check them manually with `/status` or re-start with `/loop 5m /babysit`.
+
+This prevents runaway supervision if workers hang indefinitely.
 
 ## What This Skill Does Each Tick
 
@@ -24,7 +39,7 @@ This runs `/babysit` every 5 minutes until manually stopped. You can also run it
 2. **Read each worker's original assignment** — from plan files and task metadata
 3. **Assess progress** — compare git history against assigned steps
 4. **Detect problems** — stalls, scope drift, repeated failures, no commits
-5. **Write NUDGE.md** — drop a nudge file into any worktree that needs course correction
+5. **Write NUDGE.md** — drop a nudge file into any worktree that needs course correction (using atomic write)
 6. **Report to console** — summarize findings for the human
 
 ## Phase 1: Discover Workers
@@ -40,7 +55,9 @@ For each worktree on a `build/tNN-*` branch, collect:
 - Last commit timestamp
 - Total commit count since branching from base
 
-Skip worktrees that are not on `build/*` branches.
+Skip worktrees that are not on `build/*` branches. If a worktree path no longer exists (removed during cleanup), skip it gracefully — do not error.
+
+**Auto-stop:** If zero `build/*` worktrees are found, output "No active workers. Babysit exiting." and stop (do not reschedule the next tick).
 
 ## Phase 2: Read Original Assignment
 
@@ -56,7 +73,7 @@ Extract:
 - **Files owned** (exclusive file list)
 - **Complexity / iteration limit** (S/M/L)
 
-If the original assignment can't be determined, flag the worktree as `UNKNOWN_ASSIGNMENT` and report it.
+If the original assignment can't be determined, flag the worktree as `UNKNOWN_ASSIGNMENT` in the console report with a warning: "Cannot determine task assignment for worktree [path]. Check plan files." Do not write a NUDGE.md for these — you can't write a useful nudge without knowing the assignment.
 
 ## Phase 3: Assess Progress
 
@@ -83,16 +100,39 @@ Flag a worktree if ANY of the following are true:
 
 | Problem | Detection Rule |
 |---------|---------------|
-| **STALLED** | No commits in the last 10 minutes AND no uncommitted changes |
-| **SLOW** | Less than 1 step completed per 15 minutes (adjusted for complexity) |
+| **STALLED** | No commits in the last 10 minutes AND no uncommitted changes (worker is idle) |
+| **SLOW** | Step pace below complexity threshold (see table below) |
 | **SCOPE DRIFT** | Files modified that are NOT in the worker's owned file list |
 | **REPEATED FAILURE** | 3+ commits on the same step (e.g., multiple `fix(t01): step 3` commits) |
 | **NO PROGRESS** | Worktree exists for 10+ minutes with zero commits |
 | **BLOCKED** | Worker's last output or commit message contains `BLOCKED:` |
 
+### SLOW Thresholds by Complexity
+
+The pace threshold adjusts based on the task's declared complexity:
+
+| Complexity | Max Time Per Step | Example |
+|------------|------------------|---------|
+| S (Small)  | 10 minutes       | Config change taking >10min = SLOW |
+| M (Medium) | 20 minutes       | API endpoint step taking >20min = SLOW |
+| L (Large)  | 30 minutes       | Complex feature step taking >30min = SLOW |
+
+Calculate pace as: `(elapsed time since first commit) / (steps completed)`. If this exceeds the threshold, flag as SLOW.
+
 ## Phase 5: Write NUDGE.md
 
 For any worktree with a detected problem, write a `NUDGE.md` file into the worktree root. The worker will see this file on its next ralph-loop iteration and should read it.
+
+### Atomic Write
+
+Always write NUDGE.md atomically to avoid partial reads if a worker checks mid-write:
+
+```bash
+cat > [WORKTREE_PATH]/.NUDGE.md.tmp << 'EOF'
+[nudge contents]
+EOF
+mv [WORKTREE_PATH]/.NUDGE.md.tmp [WORKTREE_PATH]/NUDGE.md
+```
 
 ### NUDGE.md Format
 
@@ -125,7 +165,8 @@ For any worktree with a detected problem, write a `NUDGE.md` file into the workt
 
 **STALLED:**
 ```
-You appear stalled — no commits or changes in the last 10 minutes.
+You appear stalled — no commits in the last 10 minutes and no uncommitted
+changes detected. You don't appear to be actively working.
 If you're stuck, output BLOCKED: [reason] so the orchestrator can help.
 If you're thinking through a complex step, commit a WIP and continue.
 Your next step is: [NEXT_UNCOMPLETED_STEP]
@@ -170,7 +211,8 @@ validate, and commit. One step at a time.
 **SLOW:**
 ```
 Progress is behind expected pace. You've completed [N] of [M] steps
-in [DURATION].
+in [DURATION]. Expected pace for [COMPLEXITY] tasks: 1 step per
+[THRESHOLD] minutes.
 
 Remaining steps:
 [REMAINING_STEP_LIST]
@@ -190,10 +232,10 @@ Your remaining non-blocked steps: [LIST]
 
 ### NUDGE.md Rules
 
-- **One NUDGE.md per worktree.** Overwrite the previous one if it exists.
+- **One NUDGE.md per worktree.** Overwrite the previous one if it exists. If overwriting, log the previous nudge type to the console report (e.g., "Overwrote previous STALLED nudge with SCOPE DRIFT nudge for t02").
 - **Only write if there's a problem.** Do not nudge healthy workers.
 - **Delete stale nudges.** If a previously nudged worker is now making progress, delete the NUDGE.md from that worktree.
-- **Never modify any other file** in the worktree. NUDGE.md is the ONLY file the babysitter touches.
+- **Never modify any other file** in the worktree. NUDGE.md (and its .tmp) are the ONLY files the babysitter touches.
 
 ## Phase 6: Console Report
 
@@ -202,6 +244,7 @@ After checking all worktrees, output a summary to the console:
 ```
 ╔═══════════════════════════════════════════════════════╗
 ║              BABYSIT CHECK — [TIMESTAMP]              ║
+║              Tick [N]/24 (max 2h)                     ║
 ╠═══════════════════════════════════════════════════════╣
 
 WORKERS: [N active]
@@ -213,7 +256,7 @@ WORKERS: [N active]
 
 NUDGES WRITTEN: 2
   - .claude/worktrees/t02-api-endpoints/NUDGE.md (STALLED)
-  - .claude/worktrees/t04-frontend-components/NUDGE.md (SCOPE DRIFT)
+  - .claude/worktrees/t04-frontend-components/NUDGE.md (SCOPE DRIFT — overwrote previous SLOW)
 
 STALE NUDGES REMOVED: 1
   - .claude/worktrees/t01-database-schema/NUDGE.md (worker recovered)
@@ -231,10 +274,13 @@ OVERALL: 10/22 steps complete across 4 workers
 - **Idempotent.** Running twice in a row with no worker progress should produce the same result (same NUDGE.md contents, not duplicate files).
 - **Fast.** Complete the full check in under 30 seconds. Don't run builds or tests — just read git state.
 - **Non-blocking.** Never wait for workers. Check state, write nudges, report, exit.
+- **Graceful with missing worktrees.** If a worktree was removed between ticks (Phase 7 cleanup), skip it without error.
 
 ## Integration with /build
 
 The `/build` orchestrator should start `/babysit` automatically when entering Phase 5 (RALPH SWARM) and stop it when Phase 5 completes. Workers using ralph-loop will automatically see the NUDGE.md on their next iteration since ralph-loop re-reads the working directory each cycle.
+
+The babysitter auto-stops when it finds zero active `build/*` worktrees or after 2 hours, whichever comes first.
 
 ### Worker Responsibility
 
@@ -243,3 +289,4 @@ Workers (ralph-loop or subagent) MUST:
 2. If present, read it and follow the action required
 3. Delete `NUDGE.md` after acknowledging it
 4. If the nudge identifies scope drift, revert out-of-scope changes before continuing
+5. If the nudge's action conflicts with your current step (e.g., "revert file X" but you need file X), output `BLOCKED: "nudge conflicts with step N — need file X for [reason]"` instead of blindly following it
