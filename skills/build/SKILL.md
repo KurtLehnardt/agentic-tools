@@ -111,11 +111,21 @@ For each task, define:
 
 ### Iteration Limits by Complexity
 
+**Ralph-loop workers** (iterative, self-correcting):
+
 | Complexity | Max Iterations | Examples |
 |------------|---------------|----------|
 | S (Small)  | 10            | Config changes, simple utilities |
 | M (Medium) | 20            | API endpoints, component implementations |
 | L (Large)  | 35            | Complex features, test suites |
+
+**Fallback one-shot subagent workers** (no retry loop — need more headroom):
+
+| Complexity | Max Turns |
+|------------|-----------|
+| S (Small)  | 20        |
+| M (Medium) | 35        |
+| L (Large)  | 50        |
 
 ## Phase 5: RALPH SWARM
 
@@ -132,10 +142,10 @@ For each task from Phase 4, dispatch a **ralph-loop** worker. The ralph-loop plu
 This runs in the background and monitors all active worker worktrees. It:
 - Compares each worker's git progress against their assigned plan steps
 - Detects stalls, scope drift, repeated failures, and blocked workers
-- Writes a `NUDGE.md` file into any drifting worker's worktree with their original assignment and corrective instructions
+- Writes a `NUDGE.md` file (atomically) into any drifting worker's worktree with their original assignment and corrective instructions
 - Workers read and act on `NUDGE.md` at the start of each ralph-loop iteration, then delete it
 
-**Stop the babysitter** when all workers complete (at the end of Phase 5). The babysitter is read-only — it never modifies code, only writes `NUDGE.md` files.
+**Stopping the babysitter:** The babysitter auto-stops when it detects zero active `build/*` worktrees (normal shutdown after Phase 7 cleanup), or after a hard limit of 2 hours (24 ticks). You can also stop it manually with `/loop stop` or `Ctrl+C`.
 
 ### Worktree Setup
 
@@ -144,7 +154,11 @@ Before dispatching each worker:
 ```bash
 git fetch origin
 git worktree add .claude/worktrees/tNN-description origin/main -b build/tNN-description
+echo "NUDGE.md" >> .claude/worktrees/tNN-description/.gitignore
+echo ".NUDGE.md.tmp" >> .claude/worktrees/tNN-description/.gitignore
 ```
+
+The `.gitignore` entries prevent workers from accidentally staging or committing supervisor artifacts.
 
 ### Worker Dispatch via Ralph Loop
 
@@ -177,7 +191,7 @@ Working directory: .claude/worktrees/tNN-description
 ## Self-Review Before Completion
 
 Before outputting the completion promise, you MUST:
-1. Run: npm run build && npx tsc --noEmit
+1. Run: npm test && npm run build && npx tsc --noEmit
 2. Review your own git diff against the base branch
 3. Check that ALL assigned steps are implemented
 4. Verify no files outside your scope were modified
@@ -190,9 +204,9 @@ If stuck after 3 attempts on a step, output BLOCKED: [reason] in your response (
 
 ### Parallelism Rules
 
-- **Independent tasks** (no dependency edges) → dispatch simultaneously. Each gets its own ralph-loop in a separate terminal/session if possible. If running in a single session, dispatch sequentially.
+- **Independent tasks** (no dependency edges) → dispatch simultaneously.
 - **Dependent tasks** → dispatch sequentially. Wait for the dependency's ralph-loop to complete (outputs `TASK_COMPLETE`) before starting the dependent task.
-- **Maximum concurrent workers**: Limited by available sessions. In a single session, ralph-loops run sequentially.
+- **Maximum concurrent workers: 4.** Queue additional independent tasks if more than 4 are ready. When a worker completes, dispatch the next queued task. In a single-session environment where ralph-loops must run sequentially, dispatch one at a time and note the reduced parallelism in the Phase 4 status report.
 
 ### Worker Monitoring
 
@@ -216,7 +230,7 @@ If the ralph-loop plugin is not installed or not available:
    >
    > Continuing with one-shot subagent workers. The build will still complete, but workers won't auto-retry on failures or self-validate in a loop.
 
-2. Fall back to one-shot subagent workers:
+2. Fall back to one-shot subagent workers using the **fallback iteration limits** (20/35/50 turns instead of 10/20/35):
 
 ```
 Subagent: Task tool, subagent_type="general-purpose"
@@ -301,7 +315,7 @@ git worktree remove .claude/worktrees/tNN-description
 git branch -d build/tNN-description
 ```
 
-Remove any remaining `NUDGE.md` files from worktrees before deleting them.
+Remove any remaining `NUDGE.md` files from worktrees before deleting them. Once all worktrees are removed, the babysitter's next tick will find zero `build/*` worktrees and auto-stop.
 
 ### Final Validation
 
@@ -330,7 +344,7 @@ If this fails, diagnose which merge introduced the break and re-dispatch a ralph
 → Dispatch a ralph-loop to resolve the conflict in the target branch. The worker should only resolve the conflict, not add new features.
 
 ### Ralph-loop plugin not available
-→ Print to console: "**ralph-loop plugin not detected.** Install it with: `/plugin install ralph-skills@ralph-marketplace` — the build will still work using one-shot subagents, but without iterative self-correction." Then fall back to one-shot subagent workers (Phase 5 fallback).
+→ Print to console: "**ralph-loop plugin not detected.** Install it with: `/plugin install ralph-skills@ralph-marketplace` — the build will still work using one-shot subagents, but without iterative self-correction." Then fall back to one-shot subagent workers (Phase 5 fallback) with the higher turn limits (20/35/50).
 
 ## Commit Convention
 
