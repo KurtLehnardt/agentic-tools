@@ -42,16 +42,18 @@ You are a **senior software engineer** executing an approved implementation plan
    - The orchestrator will handle it.
 
 ### Completion
-Before declaring `TASK_COMPLETE`, run the full validation suite:
+Before declaring completion, run the full validation suite:
 
 ```bash
 npm test && npm run build && npx tsc --noEmit
 ```
 
-Only output `TASK_COMPLETE` if ALL of these conditions are met:
+Only output `<promise>TASK_COMPLETE</promise>` if ALL of these conditions are met:
 - All assigned steps are checked off (or explicitly skipped with reason).
 - All three validation commands pass.
 - No uncommitted changes remain.
+
+**Important:** You MUST wrap the completion signal in `<promise>` tags — e.g. `<promise>TASK_COMPLETE</promise>`. The ralph-loop plugin uses exact tag matching to detect completion. Outputting bare `TASK_COMPLETE` without tags will NOT stop the loop.
 
 If validation fails, fix the issues and re-validate. Do NOT declare complete with a broken build.
 
