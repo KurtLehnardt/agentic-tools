@@ -1,6 +1,6 @@
 ---
 name: build
-description: "Orchestrate a full implementation pipeline: plan, architect review, executive review, task decomposition, parallel ralph-loop workers, critic review, merge. Trigger: build this, implement this, orchestrate this."
+description: "Orchestrate a full implementation pipeline: plan, architect review, executive review, task decomposition, parallel ralph-loop workers, babysit supervisor, critic review, merge. Trigger: build this, implement this, orchestrate this."
 user-invocable: true
 ---
 
@@ -15,7 +15,7 @@ Phase 1: ROADMAP        → Explore codebase, produce implementation plan
 Phase 2: ARCHITECT       → Technical review (>= 9.5 to proceed)
 Phase 3: EXECUTIVE       → Product/UX review (>= 9.5 to proceed)
 Phase 4: DECOMPOSE       → Break plan into worktree-safe tasks
-Phase 5: RALPH SWARM     → Dispatch ralph-loop workers (iterative, self-correcting)
+Phase 5: RALPH SWARM     → Dispatch ralph-loop workers + babysit supervisor
 Phase 6: CRITIC          → Code review per worker (>= 9.5 to commit)
 Phase 7: MERGE & CLEANUP → Merge approved branches, remove worktrees
 ```
@@ -121,6 +121,22 @@ For each task, define:
 
 For each task from Phase 4, dispatch a **ralph-loop** worker. The ralph-loop plugin creates a self-correcting iterative loop — the worker keeps running until it outputs the completion promise or hits the max iteration limit.
 
+### Start the Babysit Supervisor
+
+**Before dispatching any workers**, start the `/babysit` supervisor on a 5-minute cron:
+
+```
+/loop 5m /babysit
+```
+
+This runs in the background and monitors all active worker worktrees. It:
+- Compares each worker's git progress against their assigned plan steps
+- Detects stalls, scope drift, repeated failures, and blocked workers
+- Writes a `NUDGE.md` file into any drifting worker's worktree with their original assignment and corrective instructions
+- Workers read and act on `NUDGE.md` at the start of each ralph-loop iteration, then delete it
+
+**Stop the babysitter** when all workers complete (at the end of Phase 5). The babysitter is read-only — it never modifies code, only writes `NUDGE.md` files.
+
 ### Worktree Setup
 
 Before dispatching each worker:
@@ -135,7 +151,7 @@ git worktree add .claude/worktrees/tNN-description origin/main -b build/tNN-desc
 For each task, write a prompt file and dispatch via `/ralph-loop`. The prompt includes the worker instructions, assigned steps, file list, and the full plan for context.
 
 **Build the ralph-loop prompt** by combining:
-1. The contents of `references/ralph-worker-prompt.md` (worker persona + rules)
+1. The contents of `references/ralph-worker-prompt.md` (worker persona + rules + NUDGE.md protocol)
 2. The task-specific context (assigned steps, files, plan)
 3. Inline critic instructions — the worker must self-review before declaring complete
 
@@ -182,7 +198,8 @@ If stuck after 3 attempts on a step, output BLOCKED: [reason] in your response (
 
 - The ralph-loop plugin handles iteration automatically via the Stop hook.
 - Each iteration, the worker sees its previous work in files and git history.
-- If the worker outputs `BLOCKED: [reason]`, the loop continues but the worker should document the blocker.
+- The `/babysit` supervisor checks every 5 minutes and writes `NUDGE.md` into worktrees that are stalled, drifting, or stuck. Workers read and delete the nudge file each iteration.
+- If the worker outputs `BLOCKED: [reason]`, the babysitter detects this and reports it to the console.
 - If max iterations reached without `TASK_COMPLETE`, the loop stops. Assess the state and either:
   - Re-dispatch with remaining steps and higher iteration limit (+50%)
   - Escalate to human
@@ -206,6 +223,8 @@ Subagent: Task tool, subagent_type="general-purpose"
 Prompt: [same prompt as above, but without ralph-loop wrapper]
         Output TASK_COMPLETE when done.
 ```
+
+**Note:** The `/babysit` supervisor still works with one-shot subagent workers — it monitors worktree git state regardless of dispatch method. However, one-shot workers cannot read `NUDGE.md` mid-execution since they don't iterate. The nudge report is still useful for the human to see which workers are struggling.
 
 ## Phase 6: CRITIC REVIEW
 
@@ -282,6 +301,8 @@ git worktree remove .claude/worktrees/tNN-description
 git branch -d build/tNN-description
 ```
 
+Remove any remaining `NUDGE.md` files from worktrees before deleting them.
+
 ### Final Validation
 
 After ALL tasks are merged, run the full validation suite one final time:
@@ -331,8 +352,8 @@ After each phase completes, report to the human:
 - **Phase 1 complete**: "Plan produced: N steps, estimated complexity: [S/M/L distribution]"
 - **Phase 2 complete**: "Architect approved: score X.X/10"
 - **Phase 3 complete**: "Executive approved: score X.X/10"
-- **Phase 4 complete**: "Decomposed into N tasks. M parallel, K sequential. Dispatching ralph-loops."
-- **Phase 5 complete**: "All N ralph-loops complete. Dispatching critics."
+- **Phase 4 complete**: "Decomposed into N tasks. M parallel, K sequential. Dispatching ralph-loops + babysit supervisor."
+- **Phase 5 complete**: "All N ralph-loops complete. Babysit stopped. Dispatching critics."
 - **Phase 6 complete**: "All N tasks approved by critic. Scores: [list]. Merging."
 - **Phase 7 complete**: "All tasks merged. Final validation passed. Done."
 
