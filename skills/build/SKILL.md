@@ -160,6 +160,13 @@ echo ".NUDGE.md.tmp" >> .claude/worktrees/tNN-description/.gitignore
 
 The `.gitignore` entries prevent workers from accidentally staging or committing supervisor artifacts.
 
+**Worktree enforcement is non-negotiable.** If `git worktree add` fails (e.g., the repo is not initialized, or the tool doesn't support it), the orchestrator MUST:
+1. Create the worktree manually via Bash: `git worktree add .claude/worktrees/tNN-description origin/main -b build/tNN-description`
+2. Instruct each worker to `cd` into its worktree before making changes
+3. If worktrees are truly impossible (no git repo), fall back to sequential execution on separate branches — never allow parallel agents to modify the same working directory
+
+Parallel agents sharing a working directory WILL corrupt each other's changes. This is not a theoretical risk — it happens every time.
+
 ### Worker Dispatch via Ralph Loop
 
 For each task, write a prompt file and dispatch via `/ralph-loop`. The prompt includes the worker instructions, assigned steps, file list, and the full plan for context.
