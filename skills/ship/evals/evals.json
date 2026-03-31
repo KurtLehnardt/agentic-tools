@@ -1,0 +1,23 @@
+{
+  "skill_name": "ship",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I just finished building a habit tracking app called Streakly. It's a Next.js app deployed on Vercel — users set daily habits and track streaks. I have zero users and no landing page. The app is at https://streakly.vercel.app. Help me /ship this thing.",
+      "expected_output": "A go-to-market strategy document prioritized for a zero-user habit app, plus at minimum a landing page concept and a free tool concept (like a 'habit consistency score' quiz). Should identify streak mechanics as the viral artifact opportunity. Should recommend specific SEO keyword patterns around habit tracking.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "i built a budgeting app for freelancers, its a react app with supabase backend. i have about 50 beta users from friends and posting on twitter. i need to actually grow this thing — can you help me market it? my budget is basically zero, maybe i can spend like $200 on tools. the app tracks income by client, expenses by category, and estimates quarterly taxes automatically.",
+      "expected_output": "Strategy should recognize this is past zero-users stage — has 50 beta users and some signal. Should prioritize retention and activation over top-of-funnel. Free tool could be a 'freelancer tax estimator' or 'are you charging enough' calculator. SEO should target freelancer finance queries. Should NOT recommend buying newsletters at $0-200 budget. Tone should match the casual input style.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "/ship — I have a B2B SaaS tool that helps small agencies manage client feedback on design deliverables. Think Figma comments but for non-designers. Built with Next.js + Prisma + PostgreSQL. We have a landing page at feedbackloop.io and about 200 paying customers at $29/mo. I want to go from 200 to 2000 customers. Budget is around $5K for marketing.",
+      "expected_output": "Strategy should be growth-stage appropriate — NOT a zero-to-one playbook. Should focus on programmatic SEO targeting agency pain points, comparison pages vs Figma/InVision/Markup.io, and AEO for 'best client feedback tool' queries. Free tool could be a 'client communication audit' or 'feedback loop efficiency score'. Should recommend content repurposing (case studies from existing 200 customers). MCP server becomes more relevant at this stage. Newsletter sponsorship (not buying) is viable at $5K.",
+      "files": []
+    }
+  ]
+}
