@@ -48,6 +48,34 @@ After discovery, ask the user (use AskUserQuestion tool):
 
 Also ask if they want **expert reviews** (UX architect + business executive critique via subagents). Default recommendation: yes for first-time launches, optional for iterations. Let them skip if they want speed over thoroughness.
 
+### Initialize Questions File
+
+Create a `questions.md` file at the project root with this structure:
+
+```markdown
+# Ship Decisions & Open Questions
+
+## Product Context
+- **Product:** [name]
+- **Stage:** [zero users / beta / growth]
+- **Budget:** [amount]
+- **Date:** [today]
+
+## Decisions Made
+<!-- Log every decision you make on the user's behalf here -->
+
+## Expert Review Insights
+<!-- Filled in Phase 2 -->
+
+## Open Questions for User
+<!-- Things that need user input but aren't blocking -->
+
+## Deliverables Summary
+<!-- Filled in Phase 4-5 -->
+```
+
+Update this file throughout all phases. It is the single source of truth for what was decided and why.
+
 ---
 
 ## Phase 2: Expert Reviews (Optional but Recommended)
@@ -75,7 +103,7 @@ Prompt a subagent as a VP of Growth (B2C SaaS, scaled apps from 0 to 100K). Ask 
 
 ### Synthesize
 
-Merge both reviews into actionable decisions. Where they agree, that's high-confidence. Where they disagree, use your judgment and note the tradeoff. Create a `questions.md` file capturing any decisions the user should review, but proceed with your best guess — don't block on answers.
+Merge both reviews into actionable decisions. Where they agree, that's high-confidence. Where they disagree, use your judgment and note the tradeoff. Update the `questions.md` file created in Phase 1. Add expert review insights under "Expert Review Insights" — what each reviewer recommended, where they agreed, where they disagreed, and your resolution. Add any decisions made on the user's behalf under "Decisions Made" with your reasoning. Add open questions under "Open Questions for User" but proceed with your best guess — don't block on answers.
 
 ---
 
@@ -232,13 +260,15 @@ For each deliverable branch, either:
 - Provide copy-paste commands the user can run
 - Prepare PR descriptions with summary and test plan
 
-### Questions File
+### Finalize Questions File
 
-Save any decisions you made on the user's behalf to a `questions.md` file. Include:
-- What you decided and why
-- What the expert reviews recommended
-- Open questions that need the user's input
-- A summary table of what was built
+Update the `questions.md` file with a final "Deliverables Summary" section:
+- Table of what was built (branch name, description, critic score)
+- Any remaining open questions
+- Recommended next steps after the user reviews the PRs
+- Total estimated API costs for the deliverables
+
+The `questions.md` file should have been maintained throughout all phases. Do a final review to ensure it's complete and coherent.
 
 ---
 
