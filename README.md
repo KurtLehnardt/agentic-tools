@@ -5,8 +5,9 @@ Claude Code plugin that implements a full autonomous code factory. Give it an id
 ## The Pipeline
 
 ```
-/idea → /setup → /build → /test → /deploy → /teardown
+/idea → /setup → /build → /test → /deploy → /ship
                                                /status (anytime)
+                                               /teardown
 ```
 
 | Skill | Purpose |
@@ -16,6 +17,7 @@ Claude Code plugin that implements a full autonomous code factory. Give it an id
 | `/build` | 7-phase implementation: plan → architect review → exec review → workers → critic → merge |
 | `/test` | Generate test suites for existing code without modifying implementation |
 | `/deploy` | Deploy to staging/production, run migrations, health check, rollback on failure |
+| `/ship` | Go-to-market engine: strategy doc, landing page, free tool, SEO, AEO infrastructure |
 | `/status` | Factory dashboard: active builds, scores, blockers, environment health |
 | `/teardown` | Clean up worktrees, delete merged branches, archive plans |
 
@@ -46,6 +48,17 @@ Pre-flight validation, database migrations, deployment to Vercel/hosting platfor
 
 ### `/status` — Dashboard
 Read-only snapshot of the factory: active worktrees, review scores, blockers, environment health, backlog status. No subagents dispatched — reads local state directly.
+
+### `/ship` — Go-to-Market
+Takes any app (codebase, URL, or description) and produces a tailored marketing strategy + working deliverables. Runs a 5-phase pipeline:
+
+1. **Discover** — Explore the product, understand positioning and differentiators
+2. **Expert Reviews** — Parallel UX architect + business executive subagent critiques
+3. **Strategy** — Prioritized GTM document covering 8 distribution strategies with 90-day action plan
+4. **Build Deliverables** — Landing page, free lead-gen tool, SEO guide pages, AEO infrastructure (parallel worktrees)
+5. **Review & Deliver** — Critic review, fix critical issues, create PRs
+
+Adapts to product maturity: early-stage gets positioning + strategy, growth-stage gets concrete deliverables and scaling tactics.
 
 ### `/teardown` — Cleanup
 Removes merged worktrees and branches, archives completed plan files, prunes orphaned references. Never deletes unmerged work without human confirmation.
@@ -85,6 +98,9 @@ git clone https://github.com/KurtLehnardt/agentic-tools.git
 
 # Ship it
 /deploy
+
+# Go to market
+/ship
 
 # Check on things
 /status
@@ -133,6 +149,10 @@ agentic-tools/
 │   │       └── test-writer-prompt.md
 │   ├── deploy/
 │   │   └── SKILL.md
+│   ├── ship/
+│   │   ├── SKILL.md
+│   │   └── evals/
+│   │       └── evals.json
 │   ├── status/
 │   │   └── SKILL.md
 │   └── teardown/
