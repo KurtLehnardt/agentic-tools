@@ -221,6 +221,16 @@ When building, match the existing codebase's tech stack, styling, and patterns. 
 - JSON-LD structured data (Organization + SoftwareApplication schemas)
 - Improved metadata (title, description, OG tags, Twitter cards)
 
+### Pre-Build Verification
+
+Before building any deliverable, each worker MUST:
+
+1. **Verify infrastructure dependencies exist.** If building a page that calls an API endpoint, confirm that endpoint exists. If building a page that reads from a storage bucket, confirm the bucket name by reading the actual upload code. Do not assume names — read the source of truth.
+2. **Read existing patterns.** Before creating new files, read 2-3 existing files of the same type (e.g., existing API routes, existing pages) to match conventions, import paths, auth patterns, and naming.
+3. **Check for required backend.** If a deliverable requires backend changes (new API routes, new DB columns, new storage buckets), either build the backend first or clearly stub it with a descriptive error response (not a silent 404).
+
+Skipping verification is the #1 cause of broken deliverables. A page that calls a nonexistent API or uses a wrong bucket name is worse than no page at all.
+
 ### Build Process
 
 1. Use subagents in parallel where possible — one per deliverable, each in an isolated git worktree
