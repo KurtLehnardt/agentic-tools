@@ -578,11 +578,26 @@ function clearLock() {
   resetHighlights();
 }
 
+function positionTooltip(cx, cy) {
+  const pad = 16;
+  const tw = tooltip.offsetWidth;
+  const th = tooltip.offsetHeight;
+  let x = cx + pad;
+  let y = cy + pad;
+  if (x + tw > window.innerWidth) x = cx - tw - pad;
+  if (y + th > window.innerHeight) y = cy - th - pad;
+  x = Math.max(pad, Math.min(x, window.innerWidth - tw - pad));
+  y = Math.max(pad, Math.min(y, window.innerHeight - th - pad));
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
+}
+
 node.on('mouseover', function(event, d) {
   // Always show tooltip
   const color = categories[d.cat].color;
   tooltip.style.display = 'block';
   tooltip.innerHTML = `<div class="cat" style="color:${color}">${d.cat}</div><h3 style="color:${color}">${d.label}</h3><p>${d.detail.replace(/\n/g, '<br>')}</p>`;
+  positionTooltip(event.clientX, event.clientY);
 
   // Only do hover highlighting if no category is locked
   if (!lockedCategory) {
@@ -612,13 +627,7 @@ node.on('mouseover', function(event, d) {
   }
 })
 .on('mousemove', (event) => {
-  const pad = 16;
-  let x = event.clientX + pad;
-  let y = event.clientY + pad;
-  if (x + 380 > window.innerWidth) x = event.clientX - 396;
-  if (y + 200 > window.innerHeight) y = event.clientY - 216;
-  tooltip.style.left = x + 'px';
-  tooltip.style.top = y + 'px';
+  positionTooltip(event.clientX, event.clientY);
 })
 .on('mouseout', function() {
   tooltip.style.display = 'none';
