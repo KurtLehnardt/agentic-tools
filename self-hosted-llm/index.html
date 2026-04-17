@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta author="Kurt Lehnardt">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local AI Knowledge Map</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0e1a; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #e0e0e0; overflow: hidden; }
+
+  #container { width: 100vw; height: 100vh; position: relative; }
+
+  svg { width: 100%; height: 100%; }
+
+  .legend {
+    position: fixed; top: 16px; left: 16px; background: rgba(15,20,35,0.92);
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+    padding: 16px 20px; z-index: 10; backdrop-filter: blur(12px);
+    max-height: 90vh; overflow-y: auto;
+  }
+  .legend h2 { font-size: 15px; font-weight: 700; margin-bottom: 12px; color: #fff; letter-spacing: 0.5px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: pointer; padding: 3px 6px; border-radius: 6px; transition: background 0.2s; font-size: 13px; }
+  .legend-item:hover { background: rgba(255,255,255,0.06); }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+  .tooltip {
+    position: fixed; pointer-events: none; background: rgba(10,14,26,0.96);
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
+    padding: 14px 18px; max-width: 380px; z-index: 20;
+    backdrop-filter: blur(16px); box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    font-size: 13px; line-height: 1.5; display: none;
+  }
+  .tooltip h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .tooltip .cat { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.6; margin-bottom: 8px; }
+  .tooltip p { opacity: 0.85; }
+  .tooltip a { color: #7dacf7; }
+
+  .controls {
+    position: fixed; bottom: 16px; right: 16px; display: flex; gap: 8px; z-index: 10;
+  }
+  .controls button {
+    background: rgba(15,20,35,0.9); border: 1px solid rgba(255,255,255,0.1);
+    color: #ccc; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; transition: all 0.2s;
+  }
+  .controls button:hover { background: rgba(30,40,70,0.9); color: #fff; }
+
+  .search-box {
+    position: fixed; top: 16px; right: 16px; z-index: 10;
+  }
+  .search-box input {
+    background: rgba(15,20,35,0.92); border: 1px solid rgba(255,255,255,0.1);
+    color: #e0e0e0; padding: 10px 16px; border-radius: 10px; font-size: 14px;
+    width: 240px; outline: none; transition: border-color 0.2s;
+  }
+  .search-box input:focus { border-color: rgba(255,255,255,0.3); }
+  .search-box input::placeholder { color: rgba(255,255,255,0.3); }
+</style>
+</head>
+<body>
+<div id="container">
+  <svg id="graph"></svg>
+</div>
+
+<div class="legend" id="legend">
+  <h2>LOCAL AI KNOWLEDGE MAP</h2>
+</div>
+
+<div class="search-box">
+  <input type="text" id="search" placeholder="Search nodes..." />
+</div>
+
+<div class="controls">
+  <button onclick="resetZoom()">Reset View</button>
+  <button onclick="toggleLabels()">Toggle Labels</button>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const categories = {
+  "Why Local AI":       { color: "#4fc3f7", order: 0 },
+  "Hardware Tiers":     { color: "#f06292", order: 1 },
+  "VRAM & Quantization":{ color: "#ff8a65", order: 2 },
+  "Inference Engines":  { color: "#aed581", order: 3 },
+  "GUI & Desktop Tools":{ color: "#ce93d8", order: 4 },
+  "Agent Architecture": { color: "#ffd54f", order: 5 },
+  "Tool Protocols":     { color: "#4db6ac", order: 6 },
+  "The Stack":          { color: "#90a4ae", order: 7 },
+  "Models & Selection": { color: "#e57373", order: 8 },
+  "Tokenization & Internals": { color: "#7986cb", order: 9 },
+  "Performance Tuning": { color: "#fff176", order: 10 },
+  "Buying Guide":       { color: "#81d4fa", order: 11 },
+  "Apple ML Ecosystem": { color: "#b0bec5", order: 12 },
+  "Strategy & Reality": { color: "#ffab91", order: 13 },
+  "Resources":          { color: "#a1887f", order: 14 },
+};
+
+const nodes = [
+  // === WHY LOCAL AI ===
+  { id: "local_ai", label: "Local AI", cat: "Why Local AI", size: 28, detail: "Running LLMs on your own hardware instead of cloud APIs. Gives you control over cost, latency, privacy, and vendor independence." },
+  { id: "cost", label: "Cost", cat: "Why Local AI", size: 16, detail: "H100 rental: ~$80K/month for 8 GPUs. For the same price you can BUY 3-4 GPUs and own them forever. The math favors buying if you have sustained workloads." },
+  { id: "latency", label: "Latency", cat: "Why Local AI", size: 14, detail: "Local inference eliminates network round-trips. Critical for real-time applications and interactive agent loops." },
+  { id: "privacy", label: "Privacy", cat: "Why Local AI", size: 16, detail: "All data stays on-premise. No HIPAA, GDPR, or regulatory concerns about data leaving your infrastructure." },
+  { id: "independence", label: "Independence", cat: "Why Local AI", size: 14, detail: "Not locked into any vendor's pricing, rate limits, model deprecation, or terms of service changes." },
+
+  // === HARDWARE TIERS ===
+  { id: "hw_tiers", label: "Hardware Tiers", cat: "Hardware Tiers", size: 22, detail: "Three tiers of local LLM hardware. Don't start bigger than you need — models compress faster than GPUs get cheaper." },
+  { id: "consumer", label: "Consumer GPU", cat: "Hardware Tiers", size: 16, detail: "Single 3090 or 4090. ~24GB VRAM (system total ~32GB). Good starting point for 7B–13B models." },
+  { id: "prosumer", label: "Pro-sumer", cat: "Hardware Tiers", size: 16, detail: "2–4 consumer GPUs. 40–100GB VRAM. Can run 70B quantized models, dual 32B setups." },
+  { id: "serious", label: "Serious", cat: "Hardware Tiers", size: 16, detail: "RTX 6000 ADA, A6000, multi-4090. 100–200GB VRAM. Full-precision 100B+ models." },
+  { id: "unified_mem", label: "Unified Memory", cat: "Hardware Tiers", size: 13, detail: "Apple Silicon / unified memory lets you run bigger models but at ~50% token/sec speed. If throughput is critical, discrete GPUs are accelerators — but everything just loads in RAM." },
+  { id: "gpu_drivers", label: "GPU Drivers", cat: "Hardware Tiers", size: 12, detail: "CUDA works everywhere. Vulkan for LLM training/inference. Intel GPUs have limited support — needs GRUB, kernel, and driver customization. ROCm for AMD." },
+
+  // === VRAM & QUANTIZATION ===
+  { id: "vram_math", label: "VRAM Math", cat: "VRAM & Quantization", size: 20, detail: "VRAM = params × bytes_per_param × 1.2\nTraining takes more RAM than inference. This is the formula to know before buying hardware." },
+  { id: "quantization", label: "Quantization", cat: "VRAM & Quantization", size: 18, detail: "Choose how big each float is. FP16 (2 bytes), Q8 (1 byte), Q4_K_M (0.5 bytes). Like approximating π — you can't get a perfect circle but you can get close." },
+  { id: "fp16", label: "FP16 Full", cat: "VRAM & Quantization", size: 12, detail: "2 bytes/param. 7B model = 16GB, 70B model = 168GB. Full precision, best quality." },
+  { id: "q8", label: "Q8", cat: "VRAM & Quantization", size: 12, detail: "1 byte/param. 7B model = 8GB, 70B model = 84GB. Minimal quality loss." },
+  { id: "q4km", label: "Q4_K_M", cat: "VRAM & Quantization", size: 12, detail: "0.5 bytes/param. 7B model = 4GB, 70B model = 42GB. Good balance of size vs quality." },
+  { id: "kv_cache", label: "KV Cache", cat: "VRAM & Quantization", size: 16, detail: "Grows with context length × batch size. Can easily DOUBLE your memory footprint. Every extra token adds attention compute (quadratic for non-sliding models). Hurts time-to-first-token." },
+
+  // === INFERENCE ENGINES ===
+  { id: "inference", label: "Inference Engines", cat: "Inference Engines", size: 22, detail: "The serving layer: you need an inference engine, then a harness for it to work nicely." },
+  { id: "vllm", label: "vLLM", cat: "Inference Engines", size: 18, detail: "Best for throughput, batched serving, production. KV cache hotswapping makes it incredible for scaling — best for teams with high concurrent users on the same engine. Harder to set up, picky about models." },
+  { id: "llama_cpp", label: "llama.cpp", cat: "Inference Engines", size: 18, detail: "Best for flexibility, CPU offload, quantization variety. Great for testing and sandboxing. Has concurrency but drops off fast. Lower throughput than vLLM." },
+  { id: "tgi_sglang", label: "TGI / SGLang", cat: "Inference Engines", size: 12, detail: "Best for specific workloads and research. Smaller ecosystems." },
+  { id: "serving_default", label: "Good Default", cat: "Inference Engines", size: 13, detail: "Use vLLM for production, llama.cpp for testing and exploration." },
+
+  // === GUI & DESKTOP TOOLS ===
+  { id: "gui_tools", label: "GUI & Desktop", cat: "GUI & Desktop Tools", size: 18, detail: "Desktop tools for running local models without compiling from source." },
+  { id: "lm_studio", label: "LM Studio", cat: "GUI & Desktop Tools", size: 16, detail: "All benefits without compiling. GPU offloading, developer settings with guardrails. Loads from HuggingFace, models ranked by size. Can split between GPU and RAM." },
+  { id: "ollama", label: "Ollama", cat: "GUI & Desktop Tools", size: 14, detail: "Great terminal-based tool (ollama serve). Needs separate GUI. Can offload RAM↔GPU, expand context beyond 1M tokens, change seeds." },
+  { id: "open_webui", label: "Open WebUI", cat: "GUI & Desktop Tools", size: 14, detail: "GUI for your self-hosted setup. Frontend for local inference." },
+  { id: "exo", label: "exo", cat: "GUI & Desktop Tools", size: 14, detail: "Basically Kubernetes for AI models. Run on 1TB+ of VRAM across devices. Even runs on iPhone — SSH into your phone to add it to an exo cluster (phone must accept SSH, must be rooted). Apple fully supported with day-0 RDMA on Thunderbolt 5. You need an exo cluster with the Mac Studio for serious scale." },
+
+  // === AGENT ARCHITECTURE ===
+  { id: "agents", label: "Agent Architecture", cat: "Agent Architecture", size: 24, detail: "'Agent' means different things to different people. Key distinction: workflow vs cycle. The best systems use both deliberately." },
+  { id: "workflow", label: "Workflow (DAG)", cat: "Agent Architecture", size: 18, detail: "Steps are known and ordered. Deterministic. Like git add → commit → push. The agent doesn't decide the next step. A DAG — must happen in order." },
+  { id: "cycle", label: "Agent Cycle", cat: "Agent Architecture", size: 18, detail: "Variable steps, different orders. Non-deterministic. You define what you need from each step, not the sequence. If a workflow fails at a step, a cycle figures out why." },
+  { id: "best_pattern", label: "Best Pattern", cat: "Agent Architecture", size: 14, detail: "Agent cycle (flexible) → Custom tools (your API) → Workflow (deterministic). Don't get the OK from the agent to know when a step is done — the program has to know." },
+  { id: "kitaru", label: "Kitaru", cat: "Agent Architecture", size: 16, detail: "MLOps for workflows and cycles. Crash recovery: if your agent crashes at step 7, Kitaru replays from step 7. Add two decorators for crash recovery, human approval gates, durable memory, cost tracking, dashboard. No rewrite, no graph DSL, no lock-in.\ngithub.com/zenml-io/kitaru" },
+  { id: "harness", label: "Agent Harness", cat: "Agent Architecture", size: 15, detail: "Structure: text → tokenization → prompt injection → tool invocation → shell commands. Reference starter: github.com/IMJONEZZ/AIMakerspace9" },
+
+  // === TOOL PROTOCOLS ===
+  { id: "mcp", label: "MCP", cat: "Tool Protocols", size: 16, detail: "Standard way to expose tools to agent clients. Not a workflow engine or a good protocol — we use it because it's adopted. 'The necessary evil.' Watch for malicious tool call injections (XML tags, all caps, ZWX tokens)." },
+  { id: "utcp", label: "UTCP", cat: "Tool Protocols", size: 14, detail: "Universal Tool-calling Protocol. Better than MCP but not widely adopted yet. utcp.io/utcp-vs-mcp" },
+  { id: "tool_calling", label: "Tool Calling", cat: "Tool Protocols", size: 14, detail: "No universal standard. Tricks: XML tags, all-caps instructions, ZWX (never appears as a token) as end-of-call marker. Ask cloud models to 'token heal' your tool calls." },
+  { id: "fastmcp", label: "fastMCP", cat: "Tool Protocols", size: 12, detail: "Current standard implementation for agent tools. Part of the recommended stack." },
+
+  // === THE STACK ===
+  { id: "stack", label: "The Stack", cat: "The Stack", size: 20, detail: "A complete local AI stack: Obsidian + SearXNG + Usearch + vLLM + fastMCP + watchdog." },
+  { id: "obsidian", label: "Obsidian", cat: "The Stack", size: 14, detail: "Storage layer. Not special — it's a UI for .md files. Every note is a .md file in a single directory tree. An agent can navigate, read, and write directly." },
+  { id: "searxng", label: "SearXNG", cat: "The Stack", size: 13, detail: "Self-hosted, multi-engine web search. No API keys needed." },
+  { id: "usearch", label: "Usearch", cat: "The Stack", size: 13, detail: "Vector index. Single-file, no server, fast. For semantic search and retrieval." },
+  { id: "watchdog", label: "watchdog", cat: "The Stack", size: 11, detail: "File monitoring. Auto-indexes on vault changes to keep your knowledge base fresh." },
+  { id: "rag", label: "RAG Pipeline", cat: "The Stack", size: 16, detail: "Retrieval-augmented generation. Semantic chunking, link-aware retrieval, forge-kb HTTP surface. If it has to search the web, it ingests and caches as .md. Long-running caches are problematic." },
+
+  // === MODELS & SELECTION ===
+  { id: "model_select", label: "Model Selection", cat: "Models & Selection", size: 18, detail: "If you don't know what you want → use frontier models. If you DO know → you can outperform frontier with well-tuned local ones. Ask cloud models to make your local models better." },
+  { id: "nemotron", label: "Nemotron", cat: "Models & Selection", size: 12, detail: "3 variants: Super, 120B, A12B." },
+  { id: "huggingface", label: "HuggingFace", cat: "Models & Selection", size: 14, detail: "Model hub. LM Studio loads from here. Models ranked by size so you can find one that fits your VRAM." },
+  { id: "unsloth", label: "Unsloth", cat: "Models & Selection", size: 13, detail: "Training benchmarks and tools. unsloth.ai for fine-tuning your models efficiently." },
+  { id: "cloud_local", label: "Cloud → Local", cat: "Models & Selection", size: 14, detail: "Ask cloud models to: make your local models better, token-heal tool calls, suggest middleware ideas. Use frontier to bootstrap, then distill down." },
+
+  // === TOKENIZATION & INTERNALS ===
+  { id: "tokenization", label: "Tokenization", cat: "Tokenization & Internals", size: 16, detail: "Translates text into vectors that go straight into the model. No embedding layer, no semanticity at this stage. See: github.com/openai/tiktoken" },
+  { id: "model_arch", label: "Model Architecture", cat: "Tokenization & Internals", size: 16, detail: "The model can't be changed — architecture is immutable. You change how you present data to it. Ordered dictionary of llama blocks. RoPE, multi-head attention." },
+  { id: "logits", label: "Logits & Sampling", cat: "Tokenization & Internals", size: 14, detail: "Models generate logits. Multinomial sampling controls determinism. Temperature 0 = deterministic, high temp = more creative. Temperature comes after the seed. You can increment seed but get deterministic results per seed." },
+  { id: "dreaming", label: "Intermediary Tokens", cat: "Tokenization & Internals", size: 12, detail: "When Claude 'dreams' (intermediary tokens / adversarial generative networks), it critiques its own results, producing better responses." },
+  { id: "llama_scratch", label: "LLM from Scratch", cat: "Tokenization & Internals", size: 12, detail: "llama_from_scratch_notebook.ipynb in IMJONEZZ repo. LLMs in Production ch.9. Book: 'NLP with Transformers' — how GPT-2 was trained for code." },
+
+  // === PERFORMANCE TUNING ===
+  { id: "perf", label: "Performance", cat: "Performance Tuning", size: 18, detail: "Throughput and latency are DIFFERENT problems — buy and tune for yours. Hardware math: knowable VRAM, KV cache, quantization." },
+  { id: "context_perf", label: "Context Cost", cat: "Performance Tuning", size: 14, detail: "Context length isn't free. Every extra token adds to KV cache + attention compute (quadratic). Hurts time-to-first-token. Don't use 128K context 'because it's available.'" },
+  { id: "driver_disc", label: "Driver Discipline", cat: "Performance Tuning", size: 13, detail: "Pin, contain, isolate your drivers. Driver discipline saves weekends." },
+  { id: "scheduler", label: "Scheduler", cat: "Performance Tuning", size: 12, detail: "Prevents spikes, keeps inference stable. Important for production serving." },
+  { id: "dev_logs", label: "Developer Logs", cat: "Performance Tuning", size: 11, detail: "Show you the inner workings of how text is sent to the model. Reading a wire format is simple; reading hundreds of files of code is complex." },
+
+  // === BUYING GUIDE ===
+  { id: "buying", label: "Buying Guide", cat: "Buying Guide", size: 22, detail: "What to buy depends on your use case. Generic AI: 24GB. Cool stuff: 50–100GB. Professional: 200GB+. Don't start bigger than you need." },
+  { id: "mac_studio", label: "Mac Studio", cat: "Buying Guide", size: 16, detail: "If you just want an inference server, buy a Mac Studio. It will be slow, but token prefill processes your prompt. Unified memory lets you load big models. Needs exo cluster for serious scale." },
+  { id: "framework", label: "Framework Desktop", cat: "Buying Guide", size: 16, detail: "Buy the Framework Desktop with AMD Strix Halo. Image generation, video generation, text generation. The hard part is figuring out how much to offload from RAM to GPU.\ngithub.com/kyuz0/amd-strix-halo-toolboxes" },
+  { id: "strix_halo", label: "Strix Halo", cat: "Buying Guide", size: 13, detail: "AMD Strix Halo — tinkerer's dream. Docker containers that already have everything configured. For people who want to experiment with image/video/text gen." },
+  { id: "djx_spark", label: "DJX Spark", cat: "Buying Guide", size: 15, detail: "NVIDIA's machine. Takes tokenized context in RAM and is MUCH faster than Mac. Running on bare metal instead of Docker containers gives even better performance." },
+  { id: "vram_tiers", label: "VRAM Tier Guide", cat: "Buying Guide", size: 14, detail: "24GB = generic AI for whatever.\n50–100GB = cool stuff, serious experimentation.\n200GB+ = professional, production workloads." },
+
+  // === APPLE ML ECOSYSTEM ===
+  { id: "apple_ml", label: "Apple ML", cat: "Apple ML Ecosystem", size: 16, detail: "Apple's ML stack. CoreML is Apple's official framework — it's terrible. But MLX came out of the community and it's great. ML Studio on Mac is excellent because of MLX." },
+  { id: "coreml", label: "CoreML", cat: "Apple ML Ecosystem", size: 12, detail: "Apple's official machine learning framework. Limited and frustrating to work with for LLM inference." },
+  { id: "mlx", label: "MLX", cat: "Apple ML Ecosystem", size: 14, detail: "Community-built ML framework for Apple Silicon. Makes ML Studio on Mac great. Much better than CoreML for local LLM work." },
+
+  // === STRATEGY & REALITY ===
+  { id: "strategy", label: "Strategy", cat: "Strategy & Reality", size: 20, detail: "This is a journey, not a weekend project. Start investing in layers and figuring it out. Being able to speak to these tools will position you well for when the AI bubble bursts." },
+  { id: "vc_subsidy", label: "VC Subsidy Reality", cat: "Strategy & Reality", size: 16, detail: "We're getting tens of thousands of dollars in GPU time monthly for $200. The moment VCs stop paying for the AI vision, the whole system collapses — it's all subsidized right now." },
+  { id: "self_reliance", label: "Self-Reliance", cat: "Strategy & Reality", size: 15, detail: "Setting up your own infra frees you from cloud providers propped up on VC capital. Once you have a good homelab, cloud tools feel slower with worse responses and way too many tokens." },
+  { id: "custom_mid", label: "Custom Middleware", cat: "Strategy & Reality", size: 14, detail: "Custom middleware for homelab can be SUPERIOR to cloud models. You must know what you want to tune your model to your niche." },
+  { id: "small_tuned", label: "Small > Big (Tuned)", cat: "Strategy & Reality", size: 14, detail: "State of the art for data extraction is less than 4B params — it's just really good at it. General models are bigger because they aren't tuned. Specialization wins." },
+  { id: "kitaru_dev", label: "Kitaru for Dev", cat: "Strategy & Reality", size: 13, detail: "The main direction: making LLM-generated stuff more controllable with logic manipulation on long-running tasks. Kitaru runs on your machine and calls the API for whatever model you have set up. Hopefully you can just install a package and tell it about entities." },
+  { id: "gpu_vendors", label: "GPU Cloud Vendors", cat: "Strategy & Reality", size: 11, detail: "GPUAI, Z.ai — companies that aren't as bad as others. Mistral for models. Consider bare metal over managed Docker when possible." },
+
+  // === MODELS (new additions) ===
+  { id: "glm51", label: "GLM 5.1", cat: "Models & Selection", size: 13, detail: "900GB full model — need 1TB+ to fit model plus context. Q4 quantized is ~500GB, can fit on Mac Studio M3 Ultra with one other device offloading KV cache. Reasons so much it's overkill — only 35 tokens/sec.\nhuggingface.co/unsloth/GLM-5.1-GGUF" },
+  { id: "minimax27", label: "MiniMax 2.7", cat: "Models & Selection", size: 13, detail: "250GB — fits on a 256GB machine with context management. Fast enough for generating hundreds of documents quickly. Practical production choice." },
+
+  // === RESOURCES ===
+  { id: "imjonezz", label: "AIMakerspace9", cat: "Resources", size: 12, detail: "github.com/IMJONEZZ/AIMakerspace9 — Reference harness starter code." },
+  { id: "kitaru_repo", label: "Kitaru Repo", cat: "Resources", size: 11, detail: "github.com/zenml-io/kitaru — MLOps for agent workflows and cycles." },
+  { id: "utcp_site", label: "UTCP Site", cat: "Resources", size: 11, detail: "utcp.io/utcp-vs-mcp — Universal Tool-calling Protocol spec and MCP comparison." },
+  { id: "tiktoken", label: "tiktoken", cat: "Resources", size: 11, detail: "github.com/openai/tiktoken — OpenAI's tokenizer library." },
+  { id: "nlp_book", label: "NLP w/ Transformers", cat: "Resources", size: 11, detail: "Book: Natural Language Processing with Transformers. Covers GPT-2 code training and more." },
+  { id: "strix_repo", label: "Strix Halo Toolbox", cat: "Resources", size: 11, detail: "github.com/kyuz0/amd-strix-halo-toolboxes — Docker containers for AMD Strix Halo AI workloads." },
+  { id: "glm_gguf", label: "GLM 5.1 GGUF", cat: "Resources", size: 11, detail: "huggingface.co/unsloth/GLM-5.1-GGUF — Quantized GLM 5.1 model files." },
+];
+
+const edges = [
+  // Why Local AI
+  { source: "local_ai", target: "cost" },
+  { source: "local_ai", target: "latency" },
+  { source: "local_ai", target: "privacy" },
+  { source: "local_ai", target: "independence" },
+
+  // Hardware
+  { source: "local_ai", target: "hw_tiers" },
+  { source: "hw_tiers", target: "consumer" },
+  { source: "hw_tiers", target: "prosumer" },
+  { source: "hw_tiers", target: "serious" },
+  { source: "hw_tiers", target: "unified_mem" },
+  { source: "hw_tiers", target: "gpu_drivers" },
+
+  // VRAM
+  { source: "hw_tiers", target: "vram_math" },
+  { source: "vram_math", target: "quantization" },
+  { source: "quantization", target: "fp16" },
+  { source: "quantization", target: "q8" },
+  { source: "quantization", target: "q4km" },
+  { source: "vram_math", target: "kv_cache" },
+
+  // Inference
+  { source: "local_ai", target: "inference" },
+  { source: "inference", target: "vllm" },
+  { source: "inference", target: "llama_cpp" },
+  { source: "inference", target: "tgi_sglang" },
+  { source: "inference", target: "serving_default" },
+  { source: "vllm", target: "serving_default" },
+  { source: "llama_cpp", target: "serving_default" },
+
+  // GUI
+  { source: "inference", target: "gui_tools" },
+  { source: "gui_tools", target: "lm_studio" },
+  { source: "gui_tools", target: "ollama" },
+  { source: "gui_tools", target: "open_webui" },
+  { source: "gui_tools", target: "exo" },
+  { source: "lm_studio", target: "huggingface" },
+
+  // Agents
+  { source: "local_ai", target: "agents" },
+  { source: "agents", target: "workflow" },
+  { source: "agents", target: "cycle" },
+  { source: "agents", target: "best_pattern" },
+  { source: "workflow", target: "best_pattern" },
+  { source: "cycle", target: "best_pattern" },
+  { source: "agents", target: "kitaru" },
+  { source: "agents", target: "harness" },
+  { source: "kitaru", target: "workflow" },
+  { source: "kitaru", target: "cycle" },
+
+  // Tools
+  { source: "agents", target: "mcp" },
+  { source: "mcp", target: "utcp" },
+  { source: "mcp", target: "tool_calling" },
+  { source: "mcp", target: "fastmcp" },
+
+  // Stack
+  { source: "local_ai", target: "stack" },
+  { source: "stack", target: "obsidian" },
+  { source: "stack", target: "searxng" },
+  { source: "stack", target: "usearch" },
+  { source: "stack", target: "vllm" },
+  { source: "stack", target: "fastmcp" },
+  { source: "stack", target: "watchdog" },
+  { source: "stack", target: "rag" },
+  { source: "usearch", target: "rag" },
+
+  // Models
+  { source: "local_ai", target: "model_select" },
+  { source: "model_select", target: "nemotron" },
+  { source: "model_select", target: "huggingface" },
+  { source: "model_select", target: "unsloth" },
+  { source: "model_select", target: "cloud_local" },
+
+  // Internals
+  { source: "inference", target: "tokenization" },
+  { source: "tokenization", target: "model_arch" },
+  { source: "model_arch", target: "logits" },
+  { source: "model_arch", target: "dreaming" },
+  { source: "model_arch", target: "llama_scratch" },
+  { source: "tokenization", target: "rag" },
+
+  // Performance
+  { source: "inference", target: "perf" },
+  { source: "kv_cache", target: "context_perf" },
+  { source: "perf", target: "context_perf" },
+  { source: "perf", target: "driver_disc" },
+  { source: "perf", target: "scheduler" },
+  { source: "perf", target: "dev_logs" },
+  { source: "vllm", target: "perf" },
+
+  // Resources cross-links
+  { source: "harness", target: "imjonezz" },
+  { source: "kitaru", target: "kitaru_repo" },
+  { source: "utcp", target: "utcp_site" },
+  { source: "tokenization", target: "tiktoken" },
+  { source: "llama_scratch", target: "nlp_book" },
+  { source: "strix_halo", target: "strix_repo" },
+  { source: "glm51", target: "glm_gguf" },
+
+  // Buying Guide
+  { source: "hw_tiers", target: "buying" },
+  { source: "buying", target: "mac_studio" },
+  { source: "buying", target: "framework" },
+  { source: "buying", target: "djx_spark" },
+  { source: "buying", target: "vram_tiers" },
+  { source: "framework", target: "strix_halo" },
+  { source: "mac_studio", target: "exo" },
+  { source: "mac_studio", target: "unified_mem" },
+  { source: "djx_spark", target: "perf" },
+
+  // Apple ML
+  { source: "unified_mem", target: "apple_ml" },
+  { source: "apple_ml", target: "coreml" },
+  { source: "apple_ml", target: "mlx" },
+  { source: "mlx", target: "lm_studio" },
+
+  // Strategy
+  { source: "local_ai", target: "strategy" },
+  { source: "strategy", target: "vc_subsidy" },
+  { source: "strategy", target: "self_reliance" },
+  { source: "strategy", target: "custom_mid" },
+  { source: "strategy", target: "small_tuned" },
+  { source: "strategy", target: "kitaru_dev" },
+  { source: "kitaru_dev", target: "kitaru" },
+  { source: "self_reliance", target: "independence" },
+  { source: "custom_mid", target: "cloud_local" },
+  { source: "small_tuned", target: "model_select" },
+  { source: "strategy", target: "gpu_vendors" },
+
+  // New model edges
+  { source: "model_select", target: "glm51" },
+  { source: "model_select", target: "minimax27" },
+  { source: "glm51", target: "quantization" },
+  { source: "glm51", target: "exo" },
+  { source: "minimax27", target: "mac_studio" },
+
+  // Cross-category connections
+  { source: "quantization", target: "consumer" },
+  { source: "quantization", target: "prosumer" },
+  { source: "quantization", target: "serious" },
+  { source: "vllm", target: "kv_cache" },
+  { source: "logits", target: "perf" },
+  { source: "unified_mem", target: "exo" },
+  { source: "cloud_local", target: "tool_calling" },
+];
+
+// Build legend
+const legend = document.getElementById('legend');
+Object.entries(categories).forEach(([name, {color}]) => {
+  const item = document.createElement('div');
+  item.className = 'legend-item';
+  item.innerHTML = `<div class="legend-dot" style="background:${color}"></div><span>${name}</span>`;
+  item.onclick = () => highlightCategory(name);
+  legend.appendChild(item);
+});
+
+const width = window.innerWidth;
+const height = window.innerHeight;
+
+const svg = d3.select('#graph')
+  .attr('viewBox', [0, 0, width, height]);
+
+const g = svg.append('g');
+
+const zoom = d3.zoom()
+  .scaleExtent([0.2, 5])
+  .on('zoom', (e) => g.attr('transform', e.transform));
+
+svg.call(zoom);
+
+// Create simulation
+const simulation = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
+    const s = nodes.find(n => n.id === (typeof d.source === 'string' ? d.source : d.source.id));
+    const t = nodes.find(n => n.id === (typeof d.target === 'string' ? d.target : d.target.id));
+    if (s && t && s.cat === t.cat) return 60;
+    return 120;
+  }).strength(0.4))
+  .force('charge', d3.forceManyBody().strength(-300))
+  .force('center', d3.forceCenter(width / 2, height / 2))
+  .force('collision', d3.forceCollide().radius(d => d.size + 8))
+  .force('x', d3.forceX(width / 2).strength(0.04))
+  .force('y', d3.forceY(height / 2).strength(0.04));
+
+// Draw edges
+const link = g.append('g')
+  .selectAll('line')
+  .data(edges)
+  .join('line')
+  .attr('stroke', 'rgba(255,255,255,0.07)')
+  .attr('stroke-width', 1);
+
+// Draw nodes
+const node = g.append('g')
+  .selectAll('g')
+  .data(nodes)
+  .join('g')
+  .call(d3.drag()
+    .on('start', dragstarted)
+    .on('drag', dragged)
+    .on('end', dragended));
+
+node.append('circle')
+  .attr('r', d => d.size)
+  .attr('fill', d => categories[d.cat].color)
+  .attr('fill-opacity', 0.15)
+  .attr('stroke', d => categories[d.cat].color)
+  .attr('stroke-width', 1.5)
+  .attr('stroke-opacity', 0.6);
+
+// Inner glow
+node.append('circle')
+  .attr('r', d => d.size * 0.4)
+  .attr('fill', d => categories[d.cat].color)
+  .attr('fill-opacity', 0.5);
+
+let labelsVisible = true;
+
+const labels = g.append('g')
+  .selectAll('text')
+  .data(nodes)
+  .join('text')
+  .text(d => d.label)
+  .attr('font-size', d => Math.max(9, d.size * 0.45))
+  .attr('fill', '#e0e0e0')
+  .attr('text-anchor', 'middle')
+  .attr('dy', d => d.size + 14)
+  .attr('font-weight', d => d.size > 18 ? '600' : '400')
+  .attr('pointer-events', 'none')
+  .attr('opacity', 0.8);
+
+// Tooltip
+const tooltip = document.getElementById('tooltip');
+
+node.on('mouseover', function(event, d) {
+  const color = categories[d.cat].color;
+  tooltip.style.display = 'block';
+  tooltip.innerHTML = `<div class="cat" style="color:${color}">${d.cat}</div><h3 style="color:${color}">${d.label}</h3><p>${d.detail.replace(/\n/g, '<br>')}</p>`;
+
+  d3.select(this).select('circle:first-child')
+    .transition().duration(200)
+    .attr('fill-opacity', 0.3)
+    .attr('stroke-opacity', 1)
+    .attr('stroke-width', 2.5);
+
+  // Highlight connected edges
+  link.attr('stroke', l =>
+    (l.source.id === d.id || l.target.id === d.id) ? color : 'rgba(255,255,255,0.04)')
+    .attr('stroke-width', l =>
+      (l.source.id === d.id || l.target.id === d.id) ? 2 : 0.5)
+    .attr('stroke-opacity', l =>
+      (l.source.id === d.id || l.target.id === d.id) ? 0.7 : 1);
+
+  // Dim unconnected nodes
+  const connected = new Set();
+  connected.add(d.id);
+  edges.forEach(e => {
+    const sid = typeof e.source === 'string' ? e.source : e.source.id;
+    const tid = typeof e.target === 'string' ? e.target : e.target.id;
+    if (sid === d.id) connected.add(tid);
+    if (tid === d.id) connected.add(sid);
+  });
+  node.style('opacity', n => connected.has(n.id) ? 1 : 0.15);
+  labels.style('opacity', n => connected.has(n.id) ? 0.9 : 0.05);
+})
+.on('mousemove', (event) => {
+  const pad = 16;
+  let x = event.clientX + pad;
+  let y = event.clientY + pad;
+  if (x + 380 > width) x = event.clientX - 396;
+  if (y + 200 > height) y = event.clientY - 216;
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
+})
+.on('mouseout', function() {
+  tooltip.style.display = 'none';
+  d3.select(this).select('circle:first-child')
+    .transition().duration(200)
+    .attr('fill-opacity', 0.15)
+    .attr('stroke-opacity', 0.6)
+    .attr('stroke-width', 1.5);
+  link.attr('stroke', 'rgba(255,255,255,0.07)').attr('stroke-width', 1).attr('stroke-opacity', 1);
+  node.style('opacity', 1);
+  labels.style('opacity', 0.8);
+});
+
+// Tick
+simulation.on('tick', () => {
+  link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  node.attr('transform', d => `translate(${d.x},${d.y})`);
+  labels.attr('x', d => d.x).attr('y', d => d.y);
+});
+
+function dragstarted(event, d) {
+  if (!event.active) simulation.alphaTarget(0.3).restart();
+  d.fx = d.x; d.fy = d.y;
+}
+function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+function dragended(event, d) {
+  if (!event.active) simulation.alphaTarget(0);
+  d.fx = null; d.fy = null;
+}
+
+function resetZoom() {
+  svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
+}
+
+function toggleLabels() {
+  labelsVisible = !labelsVisible;
+  labels.transition().duration(300).attr('opacity', labelsVisible ? 0.8 : 0);
+}
+
+function highlightCategory(cat) {
+  const color = categories[cat].color;
+  const inCat = new Set(nodes.filter(n => n.cat === cat).map(n => n.id));
+
+  node.style('opacity', n => inCat.has(n.id) ? 1 : 0.1);
+  labels.style('opacity', n => inCat.has(n.id) ? 0.9 : 0.03);
+  link.attr('stroke', l => {
+    const sid = l.source.id; const tid = l.target.id;
+    return (inCat.has(sid) && inCat.has(tid)) ? color : 'rgba(255,255,255,0.02)';
+  }).attr('stroke-width', l => {
+    const sid = l.source.id; const tid = l.target.id;
+    return (inCat.has(sid) && inCat.has(tid)) ? 2 : 0.5;
+  });
+
+  // Click again to reset
+  setTimeout(() => {
+    svg.on('click.reset', () => {
+      node.style('opacity', 1);
+      labels.style('opacity', 0.8);
+      link.attr('stroke', 'rgba(255,255,255,0.07)').attr('stroke-width', 1);
+      svg.on('click.reset', null);
+    });
+  }, 100);
+}
+
+// Search
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  if (!q) {
+    node.style('opacity', 1);
+    labels.style('opacity', 0.8);
+    link.attr('stroke', 'rgba(255,255,255,0.07)').attr('stroke-width', 1);
+    return;
+  }
+  const matches = new Set(nodes.filter(n =>
+    n.label.toLowerCase().includes(q) || n.detail.toLowerCase().includes(q) || n.cat.toLowerCase().includes(q)
+  ).map(n => n.id));
+
+  node.style('opacity', n => matches.has(n.id) ? 1 : 0.08);
+  labels.style('opacity', n => matches.has(n.id) ? 1 : 0.03);
+  link.attr('stroke', l => {
+    return (matches.has(l.source.id) && matches.has(l.target.id)) ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.02)';
+  });
+});
+</script>
+</body>
+</html>
