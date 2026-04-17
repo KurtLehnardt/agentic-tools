@@ -145,7 +145,7 @@ const nodes = [
   { id: "harness", label: "Agent Harness", cat: "Agent Architecture", size: 15, detail: "Structure: text → tokenization → prompt injection → tool invocation → shell commands. Reference starter: github.com/IMJONEZZ/AIMakerspace9" },
 
   // === TOOL PROTOCOLS ===
-  { id: "mcp", label: "MCP", cat: "Tool Protocols", size: 16, detail: "Standard way to expose tools to agent clients. Not a workflow engine or a good protocol — we use it because it's adopted. 'The necessary evil.' Watch for malicious tool call injections (XML tags, all caps, ZWX tokens)." },
+  { id: "mcp", label: "MCP", cat: "Tool Protocols", size: 16, detail: "Standard way to expose tools to agent clients. Not a workflow engine or a good protocol — we use it because it's adopted. 'The necessary evil.' Watch for malicious tool call injections (XML tags, all caps, ZYX tokens)." },
   { id: "utcp", label: "UTCP", cat: "Tool Protocols", size: 14, detail: "Universal Tool-calling Protocol. Better than MCP but not widely adopted yet. utcp.io/utcp-vs-mcp" },
   { id: "tool_calling", label: "Tool Calling", cat: "Tool Protocols", size: 14, detail: "No universal standard. Tricks: XML tags, all-caps instructions, ZWX (never appears as a token) as end-of-call marker. Ask cloud models to 'token heal' your tool calls." },
   { id: "fastmcp", label: "fastMCP", cat: "Tool Protocols", size: 12, detail: "Current standard implementation for agent tools. Part of the recommended stack." },
