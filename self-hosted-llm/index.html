@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
 <meta author="Kurt Lehnardt">
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Local AI Knowledge Map</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
@@ -18,12 +18,31 @@
     position: fixed; top: 16px; left: 16px; background: rgba(15,20,35,0.92);
     border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
     padding: 16px 20px; z-index: 10; backdrop-filter: blur(12px);
-    max-height: 90vh; overflow-y: auto;
+    max-height: 90vh; overflow-y: auto; transition: all 0.3s ease;
   }
-  .legend h2 { font-size: 15px; font-weight: 700; margin-bottom: 12px; color: #fff; letter-spacing: 0.5px; }
+  .legend.collapsed { max-height: none; overflow: hidden; }
+  .legend.collapsed .legend-items { display: none; }
+  .legend h2 { font-size: 15px; font-weight: 700; margin-bottom: 0; color: #fff; letter-spacing: 0.5px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 10px; user-select: none; }
+  .legend h2 .toggle-arrow { font-size: 12px; opacity: 0.5; transition: transform 0.3s; }
+  .legend.collapsed h2 .toggle-arrow { transform: rotate(-90deg); }
+  .legend-items { margin-top: 12px; }
   .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: pointer; padding: 3px 6px; border-radius: 6px; transition: background 0.2s; font-size: 13px; }
   .legend-item:hover { background: rgba(255,255,255,0.06); }
+  .legend-item.active { background: rgba(255,255,255,0.12); }
   .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+  @media (max-width: 768px) {
+    .legend { top: 10px; left: 10px; padding: 10px 14px; max-width: 200px; font-size: 12px; }
+    .legend.collapsed { max-width: none; }
+    .legend h2 { font-size: 13px; }
+    .legend-item { font-size: 12px; margin-bottom: 4px; padding: 2px 4px; }
+    .legend-dot { width: 10px; height: 10px; }
+    .search-box { top: 10px; right: 10px; }
+    .search-box input { width: 160px; padding: 8px 12px; font-size: 13px; }
+    .controls { bottom: 10px; right: 10px; }
+    .controls button { padding: 6px 10px; font-size: 12px; }
+    .tooltip { max-width: 260px; font-size: 12px; padding: 10px 14px; }
+  }
 
   .tooltip {
     position: fixed; pointer-events: none; background: rgba(10,14,26,0.96);
@@ -64,8 +83,9 @@
   <svg id="graph"></svg>
 </div>
 
-<div class="legend" id="legend">
-  <h2>LOCAL AI KNOWLEDGE MAP</h2>
+<div class="legend collapsed" id="legend">
+  <h2 onclick="toggleLegend()">Legend <span class="toggle-arrow">&#9660;</span></h2>
+  <div class="legend-items" id="legend-items"></div>
 </div>
 
 <div class="search-box">
@@ -101,7 +121,7 @@ const categories = {
 const nodes = [
   // === WHY LOCAL AI ===
   { id: "local_ai", label: "Local AI", cat: "Why Local AI", size: 28, detail: "Running LLMs on your own hardware instead of cloud APIs. Gives you control over cost, latency, privacy, and vendor independence." },
-  { id: "cost", label: "Cost", cat: "Why Local AI", size: 16, detail: "H100 rental: ~$80K/month for 8 GPUs. For the same price you can BUY 3-4 GPUs and own them forever. The math favors buying if you have sustained workloads." },
+  { id: "cost", label: "Cost", cat: "Why Local AI", size: 16, detail: "H100 rental: tens of thousands per month for 8 GPUs (~$10K–$40K depending on provider). For that kind of money you can BUY 3-4 GPUs and own them forever. The math favors buying if you have sustained workloads." },
   { id: "latency", label: "Latency", cat: "Why Local AI", size: 14, detail: "Local inference eliminates network round-trips. Critical for real-time applications and interactive agent loops." },
   { id: "privacy", label: "Privacy", cat: "Why Local AI", size: 16, detail: "All data stays on-premise. No HIPAA, GDPR, or regulatory concerns about data leaving your infrastructure." },
   { id: "independence", label: "Independence", cat: "Why Local AI", size: 14, detail: "Not locked into any vendor's pricing, rate limits, model deprecation, or terms of service changes." },
@@ -145,7 +165,7 @@ const nodes = [
   { id: "harness", label: "Agent Harness", cat: "Agent Architecture", size: 15, detail: "Structure: text → tokenization → prompt injection → tool invocation → shell commands. Reference starter: github.com/IMJONEZZ/AIMakerspace9" },
 
   // === TOOL PROTOCOLS ===
-  { id: "mcp", label: "MCP", cat: "Tool Protocols", size: 16, detail: "Standard way to expose tools to agent clients. Not a workflow engine or a good protocol — we use it because it's adopted. 'The necessary evil.' Watch for malicious tool call injections (XML tags, all caps, ZYX tokens)." },
+  { id: "mcp", label: "MCP", cat: "Tool Protocols", size: 16, detail: "Standard way to expose tools to agent clients. Not a workflow engine or a good protocol — we use it because it's adopted. 'The necessary evil.' Watch for malicious tool call injections (XML tags, all caps, ZWX tokens)." },
   { id: "utcp", label: "UTCP", cat: "Tool Protocols", size: 14, detail: "Universal Tool-calling Protocol. Better than MCP but not widely adopted yet. utcp.io/utcp-vs-mcp" },
   { id: "tool_calling", label: "Tool Calling", cat: "Tool Protocols", size: 14, detail: "No universal standard. Tricks: XML tags, all-caps instructions, ZWX (never appears as a token) as end-of-call marker. Ask cloud models to 'token heal' your tool calls." },
   { id: "fastmcp", label: "fastMCP", cat: "Tool Protocols", size: 12, detail: "Current standard implementation for agent tools. Part of the recommended stack." },
@@ -160,7 +180,7 @@ const nodes = [
 
   // === MODELS & SELECTION ===
   { id: "model_select", label: "Model Selection", cat: "Models & Selection", size: 18, detail: "If you don't know what you want → use frontier models. If you DO know → you can outperform frontier with well-tuned local ones. Ask cloud models to make your local models better." },
-  { id: "nemotron", label: "Nemotron", cat: "Models & Selection", size: 12, detail: "3 variants: Super, 120B, A12B." },
+  { id: "nemotron", label: "Nemotron", cat: "Models & Selection", size: 12, detail: "Nemotron 3 Super 120B-A12B — one model: 120B total params, 12B active. Hybrid Mamba-Transformer MoE for agentic reasoning." },
   { id: "huggingface", label: "HuggingFace", cat: "Models & Selection", size: 14, detail: "Model hub. LM Studio loads from here. Models ranked by size so you can find one that fits your VRAM." },
   { id: "unsloth", label: "Unsloth", cat: "Models & Selection", size: 13, detail: "Training benchmarks and tools. unsloth.ai for fine-tuning your models efficiently." },
   { id: "cloud_local", label: "Cloud → Local", cat: "Models & Selection", size: 14, detail: "Ask cloud models to: make your local models better, token-heal tool calls, suggest middleware ideas. Use frontier to bootstrap, then distill down." },
@@ -184,7 +204,7 @@ const nodes = [
   { id: "mac_studio", label: "Mac Studio", cat: "Buying Guide", size: 16, detail: "If you just want an inference server, buy a Mac Studio. It will be slow, but token prefill processes your prompt. Unified memory lets you load big models. Needs exo cluster for serious scale." },
   { id: "framework", label: "Framework Desktop", cat: "Buying Guide", size: 16, detail: "Buy the Framework Desktop with AMD Strix Halo. Image generation, video generation, text generation. The hard part is figuring out how much to offload from RAM to GPU.\ngithub.com/kyuz0/amd-strix-halo-toolboxes" },
   { id: "strix_halo", label: "Strix Halo", cat: "Buying Guide", size: 13, detail: "AMD Strix Halo — tinkerer's dream. Docker containers that already have everything configured. For people who want to experiment with image/video/text gen." },
-  { id: "djx_spark", label: "DJX Spark", cat: "Buying Guide", size: 15, detail: "NVIDIA's machine. Takes tokenized context in RAM and is MUCH faster than Mac. Running on bare metal instead of Docker containers gives even better performance." },
+  { id: "djx_spark", label: "DGX Spark", cat: "Buying Guide", size: 15, detail: "NVIDIA DGX Spark — 128GB unified memory, GB10 Blackwell Superchip. Takes tokenized context in RAM and is MUCH faster than Mac. Running on bare metal instead of Docker containers gives even better performance." },
   { id: "vram_tiers", label: "VRAM Tier Guide", cat: "Buying Guide", size: 14, detail: "24GB = generic AI for whatever.\n50–100GB = cool stuff, serious experimentation.\n200GB+ = professional, production workloads." },
 
   // === APPLE ML ECOSYSTEM ===
@@ -350,8 +370,6 @@ const edges = [
   // New model edges
   { source: "model_select", target: "glm51" },
   { source: "model_select", target: "minimax27" },
-  { source: "glm51", target: "quantization" },
-  { source: "glm51", target: "exo" },
   { source: "minimax27", target: "mac_studio" },
 
   // Cross-category connections
@@ -365,14 +383,26 @@ const edges = [
 ];
 
 // Build legend
-const legend = document.getElementById('legend');
+const legendEl = document.getElementById('legend');
+const legendItems = document.getElementById('legend-items');
 Object.entries(categories).forEach(([name, {color}]) => {
   const item = document.createElement('div');
   item.className = 'legend-item';
   item.innerHTML = `<div class="legend-dot" style="background:${color}"></div><span>${name}</span>`;
-  item.onclick = () => highlightCategory(name);
-  legend.appendChild(item);
+  item.onclick = function() { highlightCategory(name, this); };
+  legendItems.appendChild(item);
 });
+
+function toggleLegend() {
+  legendEl.classList.toggle('collapsed');
+}
+
+// Auto-collapse on mobile
+if (window.innerWidth <= 768) {
+  legendEl.classList.add('collapsed');
+} else {
+  legendEl.classList.remove('collapsed');
+}
 
 const width = window.innerWidth;
 const height = window.innerHeight;
@@ -388,19 +418,84 @@ const zoom = d3.zoom()
 
 svg.call(zoom);
 
+// Precompute connection counts and leaf status
+const connectionCount = {};
+const parentOf = {}; // for leaves, track their single parent
+nodes.forEach(n => { connectionCount[n.id] = 0; });
+edges.forEach(e => {
+  const sid = typeof e.source === 'string' ? e.source : e.source.id;
+  const tid = typeof e.target === 'string' ? e.target : e.target.id;
+  connectionCount[sid] = (connectionCount[sid] || 0) + 1;
+  connectionCount[tid] = (connectionCount[tid] || 0) + 1;
+});
+// A leaf has exactly 1 connection — find its parent
+edges.forEach(e => {
+  const sid = typeof e.source === 'string' ? e.source : e.source.id;
+  const tid = typeof e.target === 'string' ? e.target : e.target.id;
+  if (connectionCount[tid] === 1) parentOf[tid] = sid;
+  if (connectionCount[sid] === 1) parentOf[sid] = tid;
+});
+const isLeaf = (id) => connectionCount[id] === 1;
+
+// Category cluster positions — spread categories around the canvas
+const catNames = Object.keys(categories);
+const catPositions = {};
+catNames.forEach((name, i) => {
+  const angle = (2 * Math.PI * i) / catNames.length - Math.PI / 2;
+  const radius = Math.min(width, height) * 0.3;
+  catPositions[name] = {
+    x: width / 2 + radius * Math.cos(angle),
+    y: height / 2 + radius * Math.sin(angle)
+  };
+});
+
 // Create simulation
 const simulation = d3.forceSimulation(nodes)
   .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
     const s = nodes.find(n => n.id === (typeof d.source === 'string' ? d.source : d.source.id));
     const t = nodes.find(n => n.id === (typeof d.target === 'string' ? d.target : d.target.id));
-    if (s && t && s.cat === t.cat) return 60;
-    return 120;
-  }).strength(0.4))
-  .force('charge', d3.forceManyBody().strength(-300))
-  .force('center', d3.forceCenter(width / 2, height / 2))
-  .force('collision', d3.forceCollide().radius(d => d.size + 8))
-  .force('x', d3.forceX(width / 2).strength(0.04))
-  .force('y', d3.forceY(height / 2).strength(0.04));
+    // Leaves stay close to parent
+    if (isLeaf(s?.id) || isLeaf(t?.id)) return 40;
+    if (s && t && s.cat === t.cat) return 55;
+    return 140;
+  }).strength(d => {
+    const s = nodes.find(n => n.id === (typeof d.source === 'string' ? d.source : d.source.id));
+    const t = nodes.find(n => n.id === (typeof d.target === 'string' ? d.target : d.target.id));
+    // Strong pull for leaves to their parent
+    if (isLeaf(s?.id) || isLeaf(t?.id)) return 1.2;
+    return (s && t && s.cat === t.cat) ? 0.7 : 0.15;
+  }))
+  .force('charge', d3.forceManyBody().strength(d => isLeaf(d.id) ? -80 : -350))
+  .force('center', d3.forceCenter(width / 2, height / 2).strength(0.03))
+  .force('collision', d3.forceCollide().radius(d => d.size + 10))
+  .force('x', d3.forceX(d => {
+    // Leaves: no center gravity (their link to parent handles positioning)
+    if (isLeaf(d.id)) return catPositions[d.cat]?.x || width / 2;
+    return catPositions[d.cat]?.x || width / 2;
+  }).strength(d => isLeaf(d.id) ? 0.02 : 0.12))
+  .force('y', d3.forceY(d => {
+    if (isLeaf(d.id)) return catPositions[d.cat]?.y || height / 2;
+    return catPositions[d.cat]?.y || height / 2;
+  }).strength(d => isLeaf(d.id) ? 0.02 : 0.12))
+  // Custom force: push leaves away from center, past their parent
+  .force('leafPush', function() {
+    const cx = width / 2, cy = height / 2;
+    return () => {
+      nodes.forEach(n => {
+        if (!isLeaf(n.id)) return;
+        const pid = parentOf[n.id];
+        const parent = nodes.find(p => p.id === pid);
+        if (!parent) return;
+        // Vector from center through parent — leaf should be on the far side
+        const dx = parent.x - cx;
+        const dy = parent.y - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        // Nudge leaf outward along center→parent direction
+        n.vx += (dx / dist) * 1.5;
+        n.vy += (dy / dist) * 1.5;
+      });
+    };
+  }());
 
 // Draw edges
 const link = g.append('g')
@@ -449,60 +544,112 @@ const labels = g.append('g')
   .attr('pointer-events', 'none')
   .attr('opacity', 0.8);
 
-// Tooltip
+// Tooltip & selection state
 const tooltip = document.getElementById('tooltip');
+let lockedCategory = null; // tracks legend-locked category
 
-node.on('mouseover', function(event, d) {
-  const color = categories[d.cat].color;
-  tooltip.style.display = 'block';
-  tooltip.innerHTML = `<div class="cat" style="color:${color}">${d.cat}</div><h3 style="color:${color}">${d.label}</h3><p>${d.detail.replace(/\n/g, '<br>')}</p>`;
-
-  d3.select(this).select('circle:first-child')
-    .transition().duration(200)
-    .attr('fill-opacity', 0.3)
-    .attr('stroke-opacity', 1)
-    .attr('stroke-width', 2.5);
-
-  // Highlight connected edges
-  link.attr('stroke', l =>
-    (l.source.id === d.id || l.target.id === d.id) ? color : 'rgba(255,255,255,0.04)')
-    .attr('stroke-width', l =>
-      (l.source.id === d.id || l.target.id === d.id) ? 2 : 0.5)
-    .attr('stroke-opacity', l =>
-      (l.source.id === d.id || l.target.id === d.id) ? 0.7 : 1);
-
-  // Dim unconnected nodes
-  const connected = new Set();
-  connected.add(d.id);
-  edges.forEach(e => {
-    const sid = typeof e.source === 'string' ? e.source : e.source.id;
-    const tid = typeof e.target === 'string' ? e.target : e.target.id;
-    if (sid === d.id) connected.add(tid);
-    if (tid === d.id) connected.add(sid);
-  });
-  node.style('opacity', n => connected.has(n.id) ? 1 : 0.15);
-  labels.style('opacity', n => connected.has(n.id) ? 0.9 : 0.05);
-})
-.on('mousemove', (event) => {
-  const pad = 16;
-  let x = event.clientX + pad;
-  let y = event.clientY + pad;
-  if (x + 380 > width) x = event.clientX - 396;
-  if (y + 200 > height) y = event.clientY - 216;
-  tooltip.style.left = x + 'px';
-  tooltip.style.top = y + 'px';
-})
-.on('mouseout', function() {
-  tooltip.style.display = 'none';
-  d3.select(this).select('circle:first-child')
-    .transition().duration(200)
+function resetHighlights() {
+  node.selectAll('circle:first-child')
     .attr('fill-opacity', 0.15)
     .attr('stroke-opacity', 0.6)
     .attr('stroke-width', 1.5);
   link.attr('stroke', 'rgba(255,255,255,0.07)').attr('stroke-width', 1).attr('stroke-opacity', 1);
   node.style('opacity', 1);
   labels.style('opacity', 0.8);
+}
+
+function applyLockedCategory() {
+  if (!lockedCategory) return;
+  const color = categories[lockedCategory].color;
+  const inCat = new Set(nodes.filter(n => n.cat === lockedCategory).map(n => n.id));
+  node.style('opacity', n => inCat.has(n.id) ? 1 : 0.1);
+  labels.style('opacity', n => inCat.has(n.id) ? 0.9 : 0.03);
+  link.attr('stroke', l => {
+    return (inCat.has(l.source.id) && inCat.has(l.target.id)) ? color : 'rgba(255,255,255,0.02)';
+  }).attr('stroke-width', l => {
+    return (inCat.has(l.source.id) && inCat.has(l.target.id)) ? 2 : 0.5;
+  });
+}
+
+function clearLock() {
+  lockedCategory = null;
+  // Remove active state from legend items
+  document.querySelectorAll('.legend-item').forEach(el => el.classList.remove('active'));
+  resetHighlights();
+}
+
+node.on('mouseover', function(event, d) {
+  // Always show tooltip
+  const color = categories[d.cat].color;
+  tooltip.style.display = 'block';
+  tooltip.innerHTML = `<div class="cat" style="color:${color}">${d.cat}</div><h3 style="color:${color}">${d.label}</h3><p>${d.detail.replace(/\n/g, '<br>')}</p>`;
+
+  // Only do hover highlighting if no category is locked
+  if (!lockedCategory) {
+    d3.select(this).select('circle:first-child')
+      .transition().duration(200)
+      .attr('fill-opacity', 0.3)
+      .attr('stroke-opacity', 1)
+      .attr('stroke-width', 2.5);
+
+    link.attr('stroke', l =>
+      (l.source.id === d.id || l.target.id === d.id) ? color : 'rgba(255,255,255,0.04)')
+      .attr('stroke-width', l =>
+        (l.source.id === d.id || l.target.id === d.id) ? 2 : 0.5)
+      .attr('stroke-opacity', l =>
+        (l.source.id === d.id || l.target.id === d.id) ? 0.7 : 1);
+
+    const connected = new Set();
+    connected.add(d.id);
+    edges.forEach(e => {
+      const sid = typeof e.source === 'string' ? e.source : e.source.id;
+      const tid = typeof e.target === 'string' ? e.target : e.target.id;
+      if (sid === d.id) connected.add(tid);
+      if (tid === d.id) connected.add(sid);
+    });
+    node.style('opacity', n => connected.has(n.id) ? 1 : 0.15);
+    labels.style('opacity', n => connected.has(n.id) ? 0.9 : 0.05);
+  }
+})
+.on('mousemove', (event) => {
+  const pad = 16;
+  let x = event.clientX + pad;
+  let y = event.clientY + pad;
+  if (x + 380 > window.innerWidth) x = event.clientX - 396;
+  if (y + 200 > window.innerHeight) y = event.clientY - 216;
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
+})
+.on('mouseout', function() {
+  tooltip.style.display = 'none';
+  if (!lockedCategory) {
+    d3.select(this).select('circle:first-child')
+      .transition().duration(200)
+      .attr('fill-opacity', 0.15)
+      .attr('stroke-opacity', 0.6)
+      .attr('stroke-width', 1.5);
+    resetHighlights();
+  }
 });
+
+// Click background to dismiss locked category
+svg.on('click', function(event) {
+  if (event.target.tagName === 'svg' || event.target === svg.node()) {
+    clearLock();
+  }
+});
+// Also catch clicks on the <g> background
+g.on('click', function(event) {
+  if (event.target === g.node()) {
+    clearLock();
+  }
+});
+// Add an invisible background rect so clicks on empty space register
+g.insert('rect', ':first-child')
+  .attr('width', width * 3).attr('height', height * 3)
+  .attr('x', -width).attr('y', -height)
+  .attr('fill', 'transparent')
+  .on('click', clearLock);
 
 // Tick
 simulation.on('tick', () => {
@@ -513,12 +660,12 @@ simulation.on('tick', () => {
 });
 
 function dragstarted(event, d) {
-  if (!event.active) simulation.alphaTarget(0.3).restart();
+  if (!event.active) simulation.alphaTarget(0.5).alphaDecay(0.15).restart();
   d.fx = d.x; d.fy = d.y;
 }
 function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
 function dragended(event, d) {
-  if (!event.active) simulation.alphaTarget(0);
+  if (!event.active) simulation.alphaTarget(0).alphaDecay(0.15);
   d.fx = null; d.fy = null;
 }
 
@@ -531,40 +678,28 @@ function toggleLabels() {
   labels.transition().duration(300).attr('opacity', labelsVisible ? 0.8 : 0);
 }
 
-function highlightCategory(cat) {
-  const color = categories[cat].color;
-  const inCat = new Set(nodes.filter(n => n.cat === cat).map(n => n.id));
-
-  node.style('opacity', n => inCat.has(n.id) ? 1 : 0.1);
-  labels.style('opacity', n => inCat.has(n.id) ? 0.9 : 0.03);
-  link.attr('stroke', l => {
-    const sid = l.source.id; const tid = l.target.id;
-    return (inCat.has(sid) && inCat.has(tid)) ? color : 'rgba(255,255,255,0.02)';
-  }).attr('stroke-width', l => {
-    const sid = l.source.id; const tid = l.target.id;
-    return (inCat.has(sid) && inCat.has(tid)) ? 2 : 0.5;
-  });
-
-  // Click again to reset
-  setTimeout(() => {
-    svg.on('click.reset', () => {
-      node.style('opacity', 1);
-      labels.style('opacity', 0.8);
-      link.attr('stroke', 'rgba(255,255,255,0.07)').attr('stroke-width', 1);
-      svg.on('click.reset', null);
-    });
-  }, 100);
+function highlightCategory(cat, legendItem) {
+  // Toggle: clicking the same category again clears it
+  if (lockedCategory === cat) {
+    clearLock();
+    return;
+  }
+  lockedCategory = cat;
+  // Update active legend item styling
+  document.querySelectorAll('.legend-item').forEach(el => el.classList.remove('active'));
+  if (legendItem) legendItem.classList.add('active');
+  applyLockedCategory();
 }
 
-// Search
+// Search — clears any locked category
 document.getElementById('search').addEventListener('input', function() {
   const q = this.value.toLowerCase();
   if (!q) {
-    node.style('opacity', 1);
-    labels.style('opacity', 0.8);
-    link.attr('stroke', 'rgba(255,255,255,0.07)').attr('stroke-width', 1);
+    clearLock();
     return;
   }
+  lockedCategory = null;
+  document.querySelectorAll('.legend-item').forEach(el => el.classList.remove('active'));
   const matches = new Set(nodes.filter(n =>
     n.label.toLowerCase().includes(q) || n.detail.toLowerCase().includes(q) || n.cat.toLowerCase().includes(q)
   ).map(n => n.id));
