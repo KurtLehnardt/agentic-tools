@@ -21,6 +21,30 @@ Claude Code plugin that implements a full autonomous code factory. Give it an id
 | `/status` | Factory dashboard: active builds, scores, blockers, environment health |
 | `/teardown` | Clean up worktrees, delete merged branches, archive plans |
 
+## The Machinery
+
+A second layer of skills for running the factory the way high-throughput agentic teams actually do: write **contracts** (not prompts), gate on checks a stub can't pass, let cheap owners build and expensive gatekeepers doubt, grow evals from real failures, and bound what a tricked agent can touch. Distilled from conference talks on 24/7 agent fleets, self-hosted models, harness design, agent security, and LLM ops.
+
+```
+ALIGN → EXECUTE ──────────────→ MEASURE ─────────────→ OBSERVE → GUARD
+/contract  /route /survive /gate  /verdict /capture /chain-risk  /observe  /sandbox /constitution
+```
+
+| Skill | Stage | Purpose |
+|-------|-------|---------|
+| `/contract` | Align | Declarative objective + machine-checkable acceptance criteria; refuses prompt-as-wish and imperative pseudocode |
+| `/gate` | Execute | Build an executable gate, then prove it's stub-proof — if a stub passes, the eval is the bug |
+| `/route` | Execute | Route each task to the cheapest model/effort that passes its gate; escalate on failure; prefer local for narrow work |
+| `/survive` | Execute | Wrap a worker loop (validate, rescue-parse, nudge, step-enforce, compact) so small/local models actually finish |
+| `/verdict` | Measure | Zero-trust gatekeeper: refetch from source, rerun the suite firsthand, score claim-by-claim, never trust say-so |
+| `/capture` | Measure | Turn a failure into a permanent, reproducible eval level so it can't silently return |
+| `/chain-risk` | Measure | Compounding-error math (`p^n`) → where to place gates so pipeline reliability stays above target |
+| `/observe` | Observe | Structured spans + four signals (P95 latency, $/run, err%, eval-pass); start with one critical use case |
+| `/sandbox` | Guard | Deny-by-default policy + per-MCP-server containment + violation telemetry; bounds blast radius (doesn't stop injection) |
+| `/constitution` | Guard | Pin a north-star and protect the prompt layer from tampering and injected redirection of downstream agents |
+
+These compose with the pipeline: `/contract` feeds `/build`, `/gate` hardens what `/build`'s workers must pass, `/verdict` is the merge gate, and `/observe` + `/capture` close the loop back into better routing and evals.
+
 ## How It Works
 
 ### `/idea` — Intake
@@ -155,8 +179,20 @@ agentic-tools/
 │   │       └── evals.json
 │   ├── status/
 │   │   └── SKILL.md
-│   └── teardown/
-│       └── SKILL.md
+│   ├── teardown/
+│   │   └── SKILL.md
+│   │
+│   │   # machinery layer (see "The Machinery" above)
+│   ├── contract/       └── SKILL.md
+│   ├── gate/           └── SKILL.md
+│   ├── route/          └── SKILL.md
+│   ├── survive/        └── SKILL.md
+│   ├── verdict/        └── SKILL.md
+│   ├── capture/        └── SKILL.md
+│   ├── chain-risk/     └── SKILL.md
+│   ├── observe/        └── SKILL.md
+│   ├── sandbox/        └── SKILL.md
+│   └── constitution/   └── SKILL.md
 ├── CLAUDE.md
 ├── README.md
 └── LICENSE
