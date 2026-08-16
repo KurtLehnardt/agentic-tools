@@ -72,7 +72,7 @@ Report, one line:
 
 ## Never Hand to an Agent
 
-The **verdict** and the **accountability** are human-owned. An agent runs the checks and drafts the evidence table; a human signs off that the outcome was met. There is no "the AI approved it." (Enforce the human sign-off with a merge hook if you want it mechanical — see the repo's guardrail patterns.)
+The **verdict** and the **accountability** are human-owned. An agent runs the checks and drafts the evidence table; a human signs off that the outcome was met. There is no "the AI approved it." (Enforce the human sign-off with a merge hook if you want it mechanical.)
 
 ## Handoff
 

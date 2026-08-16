@@ -179,8 +179,20 @@ agentic-tools/
 │   │       └── evals.json
 │   ├── status/
 │   │   └── SKILL.md
-│   └── teardown/
-│       └── SKILL.md
+│   ├── teardown/
+│   │   └── SKILL.md
+│   │
+│   │   # machinery layer (see "The Machinery" above)
+│   ├── contract/       └── SKILL.md
+│   ├── gate/           └── SKILL.md
+│   ├── route/          └── SKILL.md
+│   ├── survive/        └── SKILL.md
+│   ├── verdict/        └── SKILL.md
+│   ├── capture/        └── SKILL.md
+│   ├── chain-risk/     └── SKILL.md
+│   ├── observe/        └── SKILL.md
+│   ├── sandbox/        └── SKILL.md
+│   └── constitution/   └── SKILL.md
 ├── CLAUDE.md
 ├── README.md
 └── LICENSE
