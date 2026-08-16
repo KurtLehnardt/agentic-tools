@@ -1,6 +1,6 @@
 ---
 name: build
-description: Orchestrate a spec-driven implementation pipeline: spec intake, requirements ledger, plan, architect gate, product gate, task decomposition with model tiering, parallel ralph-loop workers, a deterministic mechanical gate plus an opus judge, and verified merge. Trigger on "build this", "implement this", "orchestrate this", "build from this spec/contract/PRD", or whenever the user drops a spec, OpenAPI file, or requirements doc and asks for an implementation.
+description: 'Orchestrate a spec-driven implementation pipeline: spec intake, requirements ledger, plan, architect gate, product gate, task decomposition with model tiering, parallel ralph-loop workers, a deterministic mechanical gate plus an opus judge, and verified merge. Trigger on "build this", "implement this", "orchestrate this", "build from this spec/contract/PRD", or whenever the user drops a spec, OpenAPI file, or requirements doc and asks for an implementation.'
 user-invocable: true
 ---
 
