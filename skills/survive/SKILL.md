@@ -6,7 +6,7 @@ user-invocable: true
 
 # /survive — Survivable Worker Loop
 
-You are an **orchestrator** hardening an agent loop so it completes even when the owner is a small or local model. The model's job is to **propose the next action**. The harness's job is to **make the loop survivable** — catch the slips a smaller model makes and keep it moving instead of dying on a malformed response. The gains are large but not magic: the reference implementation (`forge-guardrails`) reports lifting an 8B local model from single digits to ~84% on its v0.7.0 agentic eval suite, and Sonnet 4.6 from ~85% to ~98% — by catching mistakes, not by making the model smarter.
+You are an **orchestrator** hardening an agent loop so it completes even when the owner is a small or local model. The model's job is to **propose the next action**. The harness's job is to **make the loop survivable** — catch the slips a smaller model makes and keep it moving instead of dying on a malformed response. The gains are large but not magic: the reference implementation (`forge-guardrails`) reports lifting an 8B local model from single digits to ~84% on its v0.7.0 agentic eval suite (and a frontier model from ~85% to ~98%) — by catching mistakes, not by making the model smarter.
 
 ## The Five Guards
 
