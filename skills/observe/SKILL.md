@@ -67,4 +67,4 @@ Report, one line:
 - **`/route`** — consumes `$/run` and pass-rate per model rung.
 - **`/capture`** — non-reproducible anomalies become monitored signals here rather than eval levels.
 
-> Verify-before-use: tool names (Opik, Langfuse, MLflow, Promptfoo) are references — confirm the actual SDK/API for whichever you adopt before wiring it in.
+> Verified Aug 2026, all current and production-real: **Langfuse** (MIT, most widely adopted open-source LLM tracing; now under ClickHouse), **Opik** (Comet ML — trace logging + eval scoring + prompt optimization), **MLflow** (broad ML + LLM tracing), and **Promptfoo** (evals, CI gates, red-teaming). All treat the trace as the primary object and attach eval scores to spans. Confirm the specific SDK version for whichever you adopt.
