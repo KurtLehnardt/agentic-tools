@@ -1,6 +1,6 @@
 ---
 name: remove-dead-code
-description: "Find what code is actually dead, prove it, and optionally remove it. Runs two independent passes (static tools + reachability from real entry points), then dispatches a SEPARATE zero-trust critic subagent that re-derives every finding from scratch and refutes it in both directions before anything is called dead. Two modes: audit (report only, the default) and audit-and-fix (delete the confirmed-dead, then verify the suite stays green). Separates truly-dead (delete) from dead-in-production-but-intentional (keep) from built-but-never-wired (a human decision). Trigger: find dead code, unused code, dead-code audit, what can I delete, is this code used, how much of this repo is dead, prune the codebase, unreferenced code, orphaned modules, remove dead code."
+description: "Find what code is actually dead, prove it, and optionally remove it. Runs two independent passes (static tools + reachability from real entry points), then dispatches a SEPARATE zero-trust critic subagent that re-derives every finding from scratch and refutes it in both directions before anything is called dead. Two modes: audit (report only, the default) and audit-and-fix (delete the confirmed-dead, then verify the suite stays green). Separates truly-dead (delete) from dead-in-production-but-intentional (keep) from built-but-never-wired (a human decision — finish, cut, or defer to a tracked TODO). Trigger: find dead code, unused code, dead-code audit, what can I delete, is this code used, how much of this repo is dead, prune the codebase, unreferenced code, orphaned modules, remove dead code."
 user-invocable: true
 ---
 
@@ -10,9 +10,9 @@ You are an **orchestrator**. Find what is genuinely dead, **prove it with a sepa
 
 > **"Dead" is a reachability question, not a grep question.** A symbol is dead if nothing *reachable from a real entry point* uses it. Static tools answer a weaker question — "does this name appear anywhere?" — so they lie in **both** directions: they call live framework handlers dead, and they call test-only-reachable code alive. Every finding is guilty until proven dead.
 
-**Pick the mode first** (ask the caller or infer from the request):
+**Pick the mode first.** The bare command and every trigger phrase (including "remove dead code" / "prune the codebase") default to **audit** — never treat invocation as permission to delete. Enter **audit-and-fix** only on explicit authorization to delete.
 - **audit** *(default)* — analyze and report. Delete nothing.
-- **audit-and-fix** — do the audit, then delete bucket 1 (truly dead) and verify the suite stays green (Phase 6). Requires an explicit go; never fix in audit mode.
+- **audit-and-fix** — do the audit, then delete bucket 1 (truly dead) and verify the suite stays green (Phase 6). Never fix in audit mode.
 
 ## Phase 1: SCOPE — boundary, roots, library-check, tools
 
@@ -47,7 +47,7 @@ Walk imports transitively from each entry point; mark reachable. Flag: modules n
 
 ## Phase 3: ADVERSARIAL VERIFICATION — a SEPARATE critic, refuting both directions
 
-**Dispatch a fresh subagent** (Task/agent tool) on the strong model (`/route` to opus-tier) whose only inputs are the candidate list + repo path — **NOT your reasoning or first-pass conclusions.** It regenerates every piece of evidence from scratch. Same spirit as `/verdict`: trust nothing.
+**Dispatch a fresh subagent** (Task/agent tool) on the strongest model available (`/route` to opus-tier if present; otherwise select the top model directly) whose only inputs are the candidate list + repo path — **NOT your reasoning or first-pass conclusions.** It regenerates every piece of evidence from scratch. Same zero-trust spirit as `/verdict`.
 
 > **If you cannot spawn a separate context, say so and downgrade every verdict to UNCERTAIN.** Putting on a "critic hat" and grading your own first pass is not zero-trust — it confirms your priors and silently reduces this skill to a dressed-up `vulture` run. The separation is the load-bearing part.
 
@@ -62,7 +62,7 @@ For each **"dead"** claim, hunt for a hidden caller before accepting it — defa
 | serialization (`to_dict`/`from_dict`), `__all__` / barrel `index.ts` re-exports, plugin/entry-point hooks, file-based routing (Next.js), `//go:embed`, build tags, `init()` | referenced out-of-band or by the toolchain |
 | guarded by a feature flag / config / env / lazy or conditional import | dead in the profile you see, live under another — check ALL config profiles, default LIVE |
 
-A framework pattern (`@app.route` present) is *evidence* of life, not proof — confirm the handler is actually registered on a live app object reachable from an entry point, not merely that the decorator text exists. For each **"live"** claim, invert it: referenced *only* by tests, or *only* by other dead code → dead-in-production regardless of grep count. The critic must also **sweep for misses** — orphaned private helpers, initialized-but-never-consumed objects (a client/tracer built and never called), env vars wired to fields nothing reads, modules imported only by their own tests.
+A framework pattern (`@app.route` present) is *evidence* of life, not proof — confirm the handler is actually registered on a live app object reachable from an entry point, not merely that the decorator text exists. Test-only framework hooks (pytest fixtures, `conftest`) are not dead — pytest injects them — but they classify to bucket 2 (test-only), not production-live. For each **"live"** claim, invert it: referenced *only* by tests, or *only* by other dead code → dead-in-production regardless of grep count. The critic must also **sweep for misses** — orphaned private helpers, initialized-but-never-consumed objects (a client/tracer built and never called), env vars wired to fields nothing reads, modules imported only by their own tests.
 
 Emit a verdict per contested item: `CONFIRMED-DEAD` / `REFUTED-LIVE` / `UNCERTAIN`, each with the file:line evidence the critic regenerated itself.
 
@@ -72,7 +72,7 @@ Do **not** collapse "unused" into "delete." Sort every CONFIRMED finding:
 
 1. **Truly dead** → *delete* (audit-and-fix only). Unreferenced anywhere (prod or test): unused imports, orphaned locals, never-called private helpers, no-op env wiring.
 2. **Dead-in-production but intentional** → *keep.* Public API, `Protocol`/interface members, extension points, symmetric facade methods, test-only helpers. Reachable only from tests, by design.
-3. **Built but never wired** → *decide (human).* A complete, self-contained feature whose only missing piece is the call that connects it to an entry point. **Not** an auto-delete — surface it with the LOC + the missing connection so a human chooses finish-or-cut.
+3. **Built but never wired** → *decide (human).* A complete, self-contained feature whose only missing piece is the call that connects it to an entry point. **Not** an auto-delete — surface it with the LOC + the exact missing connection and let a human pick one of three fates: **finish** (wire the seam), **cut** (delete it), or **defer** (file a TODO / tracking issue so it's neither lost nor forced to a premature decision).
 
 **Keep vs decide rule:** is a production path *supposed* to reach it? An interface member / documented extension point / symmetric facade → intentional (bucket 2). A whole feature that just needs its connecting call → unwired (bucket 3). When intent is unclear, it's bucket 3 — surface it, don't guess.
 
@@ -99,11 +99,11 @@ State the caveat plainly: static-tool headline numbers overstate dead code (fram
 
 Run ONLY in audit-and-fix mode, ONLY on `truly_dead` (critic-CONFIRMED):
 1. **Baseline green** — run the full suite + build/import smoke; record it passing.
-2. **Delete** the bucket-1 items.
-3. **Re-verify** — rerun the suite + build. If anything fails, or import/coverage shifts unexpectedly, **REVERT that item and reclassify** — a break means it wasn't dead.
+2. **Delete in small, individually revertable commits** — one item or tight cluster per commit, so any failure is attributable.
+3. **Re-verify after each commit** — rerun the suite + build. If a previously-passing test now fails or errors, or a symbol you did NOT delete loses coverage, **revert that commit and reclassify** (a break means it wasn't dead). A rise in total coverage % from removing uncovered lines is expected, not a failure.
 4. **Never report a deletion you didn't watch go green.**
 - Bucket 2 → leave untouched.
-- Bucket 3 → present the finish-or-cut decision to the human; never auto-delete a feature, never auto-wire one.
+- Bucket 3 → present the **finish / cut / defer** choice to the human; never auto-delete a feature, never auto-wire one. On *defer*, file the TODO or issue with the LOC + the missing connection.
 
 ## Bail-outs
 - **No entry points found** → stop; you can't compute reachability. Ask what actually runs. (Remember: a *library* has roots — its public exports — even with no `main`.)
