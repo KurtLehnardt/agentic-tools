@@ -1,6 +1,6 @@
 ---
 name: remove-dead-code
-description: "Find what code is actually dead, prove it, and optionally remove it. Runs two independent passes (static tools + reachability from real entry points), then dispatches a SEPARATE zero-trust critic subagent that re-derives every finding from scratch and refutes it in both directions before anything is called dead. Two modes: audit (report only, the default) and audit-and-fix (delete the confirmed-dead, then verify the suite stays green). Separates truly-dead (delete) from dead-in-production-but-intentional (keep) from built-but-never-wired (a human decision — finish, cut, or defer to a tracked TODO). Trigger: find dead code, unused code, dead-code audit, what can I delete, is this code used, how much of this repo is dead, prune the codebase, unreferenced code, orphaned modules, remove dead code."
+description: "Find what code is actually dead, prove it, and optionally remove it. Runs two independent passes (static tools + reachability from real entry points), then dispatches a SEPARATE zero-trust critic subagent that re-derives every finding from scratch and refutes it in both directions before anything is called dead. Two modes: audit (report only, the default) and audit-and-fix (delete the confirmed-dead, then verify the suite stays green). Separates truly-dead (delete) from dead-in-production-but-intentional (keep) from built-but-never-wired — which it analyzes for value + git history, then routes to one of three fates: finish (hand the brief to the /build skill), defer (capture as tracked TODO work), or cut. Trigger: find dead code, unused code, dead-code audit, what can I delete, is this code used, how much of this repo is dead, prune the codebase, unreferenced code, orphaned modules, remove dead code."
 user-invocable: true
 ---
 
@@ -70,9 +70,12 @@ Emit a verdict per contested item: `CONFIRMED-DEAD` / `REFUTED-LIVE` / `UNCERTAI
 
 Do **not** collapse "unused" into "delete." Sort every CONFIRMED finding:
 
-1. **Truly dead** → *delete* (audit-and-fix only). Unreferenced anywhere (prod or test): unused imports, orphaned locals, never-called private helpers, no-op env wiring.
+1. **Truly dead** → *delete* (audit-and-fix only). Unreferenced anywhere (prod or test): unused imports, orphaned locals, never-called private helpers, no-op env wiring. (If an item looks like *unfinished work* rather than cruft — a half-written helper, not a stray import — treat it as bucket 3 and assess it, don't just delete.)
 2. **Dead-in-production but intentional** → *keep.* Public API, `Protocol`/interface members, extension points, symmetric facade methods, test-only helpers. Reachable only from tests, by design.
-3. **Built but never wired** → *decide (human).* A complete, self-contained feature whose only missing piece is the call that connects it to an entry point. **Not** an auto-delete — surface it with the LOC + the exact missing connection and let a human pick one of three fates: **finish** (wire the seam), **cut** (delete it), or **defer** (file a TODO / tracking issue so it's neither lost nor forced to a premature decision).
+3. **Built but never wired** → *assess, then decide (human).* A complete or partial feature whose only missing piece is the call that connects it to an entry point. **Never** auto-delete. First **analyze it for value and unfinished work**: pull its git history (`git log` / `git blame` on the files — who added it, when, the commit/PR, whether it was abandoned mid-stream), pin the *exact* missing connection (the one call or wiring that would make it live), and judge whether it's a real unfinished capability, scaffolding, or an abandoned dead-end. Present that context, then offer three fates:
+   - **finish** → hand the feature + missing connection + gathered history to the `/build` skill as the implementation brief; it completes and wires the work.
+   - **defer** → capture it as tracked TODO work — a TODO/issue carrying the history + context + missing connection. Optionally drop an in-code `# TODO(ref)` marker or comment the block out; or leave the code untouched and track it externally (default).
+   - **cut** → delete it (handled like bucket 1 in Phase 6).
 
 **Keep vs decide rule:** is a production path *supposed* to reach it? An interface member / documented extension point / symmetric facade → intentional (bucket 2). A whole feature that just needs its connecting call → unwired (bucket 3). When intent is unclear, it's bucket 3 — surface it, don't guess.
 
@@ -103,7 +106,7 @@ Run ONLY in audit-and-fix mode, ONLY on `truly_dead` (critic-CONFIRMED):
 3. **Re-verify after each commit** — rerun the suite + build. If a previously-passing test now fails or errors, or a symbol you did NOT delete loses coverage, **revert that commit and reclassify** (a break means it wasn't dead). A rise in total coverage % from removing uncovered lines is expected, not a failure.
 4. **Never report a deletion you didn't watch go green.**
 - Bucket 2 → leave untouched.
-- Bucket 3 → present the **finish / cut / defer** choice to the human; never auto-delete a feature, never auto-wire one. On *defer*, file the TODO or issue with the LOC + the missing connection.
+- Bucket 3 → never auto-act. Execute the human's pick: **finish** → invoke `/build` with the gathered brief (feature, exact missing connection, git-history context) to implement + wire + verify; **defer** → create the TODO/issue with that context, and only comment out / add an in-code marker if asked (else leave the code as-is); **cut** → delete + verify green (same loop as bucket 1).
 
 ## Bail-outs
 - **No entry points found** → stop; you can't compute reachability. Ask what actually runs. (Remember: a *library* has roots — its public exports — even with no `main`.)
