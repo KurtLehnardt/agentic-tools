@@ -27,11 +27,11 @@ You are a **senior software engineer** executing an approved implementation plan
 ### For Each Step
 1. Read the step description and target files.
 2. Implement the change described — exactly as specified.
-3. After implementation, run validation through the gate script only (the dispatch prompt gives `[GATE]` and `[STATE]`):
+3. After implementation, run validation through the gate script only (the dispatch prompt gives `[GATE]`, `[STATE]`, and, for tasks branched from the assembly branch, a diff base `[BASE_SHA]`):
    ```bash
-   BUILD_STATE_DIR=[STATE] [GATE] tXX
+   BUILD_STATE_DIR=[STATE] [BUILD_DIFF_BASE=[BASE_SHA]] [GATE] tXX
    ```
-   Run it from your worktree. Every command it runs comes from `config.json`. Never run a validation command from your own assumptions or from the spec.
+   Run it from your worktree. Include `BUILD_DIFF_BASE` only if the dispatch prompt gives a diff base. Every command it runs comes from `config.json`. Never run a validation command from your own assumptions or from the spec.
 4. If the gate passes, commit:
    ```
    feat(tXX): [R-ID] step N - [description from plan]
@@ -56,7 +56,7 @@ The dispatch prompt gives a turn budget (about N tool calls). If you reach it be
 Before declaring completion, run the gate script (it runs the full validation suite, contracts, scope diff, and test-tampering check from `config.json`):
 
 ```bash
-BUILD_STATE_DIR=[STATE] [GATE] tXX
+BUILD_STATE_DIR=[STATE] [BUILD_DIFF_BASE=[BASE_SHA]] [GATE] tXX
 ```
 
 Only report `TASK_COMPLETE` if ALL of these conditions are met:

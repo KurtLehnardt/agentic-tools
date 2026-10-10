@@ -15,10 +15,11 @@
 # the orchestrator passes the main checkout's absolute .claude/build path to every
 # worker; commands still run in, and the diff is still taken from, the worktree.
 #
-# Optional $BUILD_DIFF_BASE (a commit/ref): scope diff is taken against it instead of
-# the merge-base with base_ref. Used when a task branch starts from a branch that
-# already holds its dependencies' merged work (quick mode), so those files are not
-# counted as this task's changes.
+# Optional $BUILD_DIFF_BASE (a commit/ref): the scope diff and the test-tampering
+# comparison are taken against it instead of base_ref (merge-base for scope). Used
+# when a task branch starts from the assembly branch, which already holds its
+# dependencies' merged work, so those files are not counted as this task's changes
+# and the dependencies' tests are protected from tampering too.
 #
 # Usage:
 #   scripts/gate-check.sh <TASK_ID>       Per-task gate.
@@ -251,13 +252,16 @@ SKIP_RES = [
 def count(text, regexes):
     return sum(len(rx.findall(text)) for rx in regexes)
 
-rc, base_files_out, _ = git("ls-tree", "-r", "--name-only", base_ref)
+# With BUILD_DIFF_BASE, compare against it so tests merged in by dependencies are
+# protected as well; otherwise against base_ref (unchanged default).
+tamper_ref = os.environ.get("DIFF_BASE") or base_ref
+rc, base_files_out, _ = git("ls-tree", "-r", "--name-only", tamper_ref)
 base_files = base_files_out.splitlines() if rc == 0 else []
 base_test_files = [f for f in base_files if match_any(f, test_globs)]
 
 tamper = []
 for f in base_test_files:
-    rc, base_content, _ = git("show", f"{base_ref}:{f}")
+    rc, base_content, _ = git("show", f"{tamper_ref}:{f}")
     if rc != 0:
         continue
     if not os.path.exists(f):

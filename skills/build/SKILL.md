@@ -318,12 +318,13 @@ Run the gate as `BUILD_STATE_DIR="$STATE" "$GATE" tNN` (or `--integration`) from
 
 ### Capture the baseline first
 
-If `main` is already red — one flaky test, one pre-existing type error — every judge fails every task forever and burns five cycles each. Before dispatching anything, run the validation suite on the base commit and record it:
+If `main` is already red — one flaky test, one pre-existing type error — every judge fails every task forever and burns five cycles each. Before dispatching anything, run the validation suite on the base commit in a throwaway detached worktree (the main checkout is never switched) and record it:
 
 ```bash
-git checkout <base_ref>
-BUILD_STATE_DIR="$STATE" "$GATE" --integration    # writes $STATE/gate/integration.json
+git worktree add --detach .claude/worktrees/baseline <base_ref>
+(cd .claude/worktrees/baseline && BUILD_STATE_DIR="$STATE" "$GATE" --integration)   # exit 1 is fine: it means red checks
 cp "$STATE/gate/integration.json" "$STATE/baseline.json"
+git worktree remove --force .claude/worktrees/baseline
 ```
 
 `gate-check.sh` then gates on **delta**: a check already failing at baseline is reported as `known_failing_at_baseline` rather than as this task's regression. Scope violations and test tampering get no such tolerance — there is no baseline excuse for those.
@@ -397,7 +398,7 @@ Agent tool: subagent_type="general-purpose", model=[TIER], prompt=
 ## Your Assignment
 Task: [TASK_ID]   Branch: build/tNN-description
 Working directory: .claude/worktrees/tNN-description   Model tier: [TIER]
-Gate script: [GATE]   Build state dir: [STATE]
+Gate script: [GATE]   Build state dir: [STATE]   Diff base: [BASE_SHA, or "none" if no depends_on]
 
 ### Requirements you own:
 [LEDGER ROWS — id, criterion, verification method]
@@ -428,7 +429,7 @@ Run the mechanical gate yourself before declaring done:
 
     BUILD_STATE_DIR=[STATE] [BUILD_DIFF_BASE=[BASE_SHA]] [GATE] [TASK_ID]
 
-Include `BUILD_DIFF_BASE` only if a base sha is given in your assignment. Run it from your worktree. It must exit 0. It checks the same things the judge will check, from the same
+Include `BUILD_DIFF_BASE` only if your assignment gives a diff base other than "none". Run it from your worktree. It must exit 0. It checks the same things the judge will check, from the same
 script, so there is no benefit in guessing — read its report and fix what it
 flags. Then walk the remaining DoD lines and confirm each.
 

@@ -93,7 +93,7 @@ git worktree add .claude/worktrees/quick-<slug> -b build/quick-<slug> <base_ref>
 - A task with **any** `depends_on` starts only after ALL its dependencies are merged into the assembly branch, then branches from it:
   `git worktree add .claude/worktrees/tNN-desc -b build/tNN-desc build/quick-<slug>`
   Record `BASE_SHA=$(git rev-parse build/quick-<slug>)` at that moment and pass it to the worker as `BUILD_DIFF_BASE`, so the dependencies' merged files are not counted as this task's scope changes.
-- When a task reports `DONE`, re-run its gate from the task worktree (deterministic, no model tokens). If it passes, merge it into the assembly branch from the assembly worktree, in dependency order: `git -C .claude/worktrees/quick-<slug> merge --no-ff build/tNN-desc`. If it fails, treat the task as `BLOCKED`.
+- When a task reports `DONE`, re-run its gate from the task worktree (deterministic, no model tokens): `(cd .claude/worktrees/tNN-desc && BUILD_STATE_DIR="$STATE" [BUILD_DIFF_BASE="$BASE_SHA"] "$GATE" tNN)`, with `BUILD_DIFF_BASE` set exactly when the task branched from the assembly branch. If it passes, merge it into the assembly branch from the assembly worktree, in dependency order: `git -C .claude/worktrees/quick-<slug> merge --no-ff build/tNN-desc`. If it fails, treat the task as `BLOCKED`.
 - On a merge conflict, dispatch **one** sonnet resolver subagent scoped to the conflicted files only. It resolves the conflict and nothing else, and may not edit unrelated code.
 - **Max 4 concurrent.** Dispatch a task only when its dependencies are merged into the assembly branch.
 - Use the worker prompt below, filled in per task, with the model tier from the manifest.
@@ -112,6 +112,7 @@ the deterministic gate is your only check, so be exact.
 
 ## Your Assignment
 [TASK_ID] — [DESCRIPTION]
+Gate script: [GATE]   Build state dir: [STATE]   Diff base: [BASE_SHA, or "none" if no depends_on]
 
 ### Requirements you own (checklist rows):
 [R_ID_ROWS_WITH_ACCEPTANCE_CRITERIA]
@@ -131,7 +132,7 @@ the deterministic gate is your only check, so be exact.
 6. If the checklist contradicts the code or another requirement, stop and report SPEC_CONFLICT with the exact conflict. Do not pick a side.
 
 ## Before reporting
-Run, from your worktree: `BUILD_STATE_DIR=[STATE] [BUILD_DIFF_BASE=[BASE_SHA]] [GATE] [TASK_ID]` (`[GATE]` and `[STATE]` are absolute paths; include `BUILD_DIFF_BASE` only if given below). If it fails, fix and re-run. Do not report DONE on a failing gate.
+Run, from your worktree: `BUILD_STATE_DIR=[STATE] [BUILD_DIFF_BASE=[BASE_SHA]] [GATE] [TASK_ID]` (`[GATE]` and `[STATE]` are absolute paths; include `BUILD_DIFF_BASE` only if your assignment gives a diff base other than "none"). If it fails, fix and re-run. Do not report DONE on a failing gate.
 
 ## Report (final message, exactly one of)
 DONE [TASK_ID] — gate PASS; R-IDs implemented: [...]; commits: [...]
@@ -187,7 +188,7 @@ If the review is malformed or lacks evidence for any verdict, re-dispatch the re
 
 If the verdict is `PASS`, skip to the final report.
 
-If blockers exist, dispatch **one** fix subagent on the PR branch: sonnet, or opus if any blocker is security-related. Its brief contains only the listed blockers (NOT_MET R-IDs and blocking defects) and an instruction to change nothing else. It then runs `BUILD_STATE_DIR="$STATE" "$GATE" --integration` and pushes.
+If blockers exist, dispatch **one** fix subagent on the PR branch: sonnet, or opus if any blocker is security-related. Its brief contains only the listed blockers (NOT_MET R-IDs and blocking defects) and an instruction to change nothing else. It works in the assembly worktree `.claude/worktrees/quick-<slug>`, then runs `BUILD_STATE_DIR="$STATE" "$GATE" --integration` there and pushes.
 
 **Max 1 round.** Do not re-review and do not loop. Post a PR comment listing what was fixed and what remains. Anything still failing is reported to the human.
 
