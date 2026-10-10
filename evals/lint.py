@@ -291,7 +291,9 @@ def check_evals_json(root_dir: str) -> bool:
         skills_root = parent_dir
 
     all_valid = True
-    skip_dirs = {'results', 'sandbox'}
+    # 'sandbox' is a real skill (evals/sandbox/, 6 cases), not a scratch directory.
+    # Listing it here silently exempted an entire skill from the cross-format parity check.
+    skip_dirs = {'results'}
 
     skill_dirs = glob.glob(os.path.join(skills_root, '*'))
     for skill_dir in skill_dirs:
