@@ -1,0 +1,35 @@
+{
+  "skill_name": "teardown",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I just merged three feature branches (build/t01-auth, build/t02-payments, build/t03-logging) into main. Can you clean up the merged worktrees and branches? They're in .claude/worktrees/t01, t02, t03. I want to recover disk space.",
+      "expected_output": "Must execute all six phases in order: (1) inventory: list git worktrees with git worktree list and git branch output, checking merged status via git branch --merged main; (2) categorize each named item as MERGED; (3) cleanup phase: remove worktrees (.claude/worktrees/t01, t02, t03), delete local branches (build/t01-auth, build/t02-payments, build/t03-logging), delete corresponding remote branches; (4) handle any orphaned items found; (5) archive any PLAN-*.md files to .claude/archive/plans/, update SHARED_CONTEXT.md if present; (6) final report naming exact count of removed worktrees, branches, and estimated disk recovered. Should NOT delete any unmerged branches or force-remove worktrees with uncommitted changes.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "/teardown — i have some old build dirs taking up space. can you run the factory cleanup and remove anything that's been merged? just clean up for me.",
+      "expected_output": "Must recognize trigger phrase /teardown and casual, lowercase input. Execute the same six phases as case 1: inventory scan (git worktree list, git branch, git branch --merged main), categorize items as merged/active/orphaned/stale, remove merged worktrees and branches (both local and remote), archive plan files, update shared context, and produce a final report with counts and disk recovered. Tone of explanation may match the casual input style. Should NOT assume all items are safe to delete—must check merge status first.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I have a branch build/t04-payments that's been sitting for 3 days without commits. It's not merged into main. The worktree at .claude/worktrees/t04-payments has 7 modified files that I haven't committed yet. Can you clean this up?",
+      "expected_output": "Must recognize this as a STALE item per phase 2 (branch not merged, no recent commits, uncommitted changes in worktree). Must NOT auto-delete this branch or force-remove the worktree. Instead, must enter phase 5 (STALE ITEM REPORT) and report: 'Stale item requires human decision: build/t04-payments has 7 uncommitted files in .claude/worktrees/t04-payments, last commit 3 days ago. Keep working or abandon?' Must present the risk explicitly—deleting would lose uncommitted work. Must explain the categorization: why it's stale (age, lack of merge), and why the uncommitted changes prevent safe removal. Should NOT proceed with deletion.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "I have orphaned worktrees from old builds. Some are broken (branch deleted but worktree still exists). Also have 5 merged branches that are ready to delete. Can you identify orphans, prune them, and clean up the merged stuff? Be careful with anything that has unmerged commits.",
+      "expected_output": "Must execute phases 1-4 thoroughly: (1) inventory: run git worktree list and git worktree prune to clean broken references first; list all branches with git branch -r; (2) categorize: identify merged items (via git branch --merged main) separately from orphaned items (worktree without matching branch); (3) for merged items: remove worktrees, delete branches local and remote; (4) orphan handling: for each orphaned worktree, run git worktree prune, then for orphaned branches run git log main..branch-name to check for unmerged commits—if unmerged commits exist, report them instead of deleting; if no unmerged commits, safe to delete. (5) stale report: any items not fitting merged/orphaned go here; (6) final report with counts of removed vs kept, and reasoning for each orphaned item decision. Must NOT delete any branch with unmerged commits without reporting it to user first.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Clean factory. I have PLAN-t01.md and PLAN-t02.md files from old worktrees, plus a PRD-main.md in the root. I also have 2 active worktrees (t07 and t08) still being worked on. After cleanup, the factory should only have the active ones left.",
+      "expected_output": "Must distinguish plan file handling: archive PLAN-*.md files (moved to .claude/archive/plans/, created if needed), but keep PRD-*.md in project root (they're reference docs per phase 3 rules). Must identify active vs completed worktrees via phase 2 categorization (active = not merged OR recent commits OR unchecked plan steps). Must remove only completed/merged worktrees and branches, leaving t07 and t08 untouched. Final report must name: plan files archived (PLAN-t01.md, PLAN-t02.md), PRD file kept (PRD-main.md), worktrees kept (t07, t08), and confirm all cleanup completed. Should NOT delete worktrees if their branches are unmerged.",
+      "files": []
+    }
+  ]
+}

@@ -18,6 +18,24 @@
       "prompt": "/ship — I have a B2B SaaS tool that helps small agencies manage client feedback on design deliverables. Think Figma comments but for non-designers. Built with Next.js + Prisma + PostgreSQL. We have a landing page at feedbackloop.io and about 200 paying customers at $29/mo. I want to go from 200 to 2000 customers. Budget is around $5K for marketing.",
       "expected_output": "Strategy should be growth-stage appropriate — NOT a zero-to-one playbook. Should focus on programmatic SEO targeting agency pain points, comparison pages vs Figma/InVision/Markup.io, and AEO for 'best client feedback tool' queries. Free tool could be a 'client communication audit' or 'feedback loop efficiency score'. Should recommend content repurposing (case studies from existing 200 customers). MCP server becomes more relevant at this stage. Newsletter sponsorship (not buying) is viable at $5K.",
       "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "/ship my product pls. so i built this thing that shows you exactly what your competitors are charging. it scrapes their pricing pages, diffs the changes weekly, sends alerts to your email. been working on it for 3 months. now i need to get customers. the code is solid, ive got the scraper running on cron. what do i do first to get users?",
+      "expected_output": "Phase 1 discovery must name automated competitor scraping as the core mechanic and log 'confirm scraping compliance / prefer official APIs where available' under 'Open Questions for User' in questions.md. Phase 3 must still produce the prioritized strategy doc. Should NOT recommend 'just launch it and see.'",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "help me /ship this. its a SaaS for restaurants to manage reservations and table assignments. tech stack is Django + MySQL, deploying to Heroku. the product has a landing page and we onboarded 5 customers. but the 5 customers are just friends and family as a favor; theyre not actually using it. no real feature adoption, no retention. weve spent 2 months building. what marketing strategy will get us real customers?",
+      "expected_output": "Phase 1 discovery must state that 5 friends-and-family users with zero feature adoption is not a product-market-fit signal, and log that under 'Open Questions for User' in questions.md. Phase 3 must still produce the prioritized 8-strategy doc, with validation-before-scale as priority #1 and paid acquisition/SEO explicitly deprioritized with reasons. Should NOT recommend paid ads as a near-term priority.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "We're building a note-taking app for research teams. Currently it's a working MVP: Electron app with local SQLite, syncs notes to AWS S3. We have 8 beta users from university research groups. No landing page, no marketing yet. Before we market, we'd like expert product and business reviews — we're not sure if our positioning is right. Run the full ship pipeline and make sure expert reviews happen.",
+      "expected_output": "Must recognize explicit request for expert reviews ('we'd like expert product and business reviews') and trigger Phase 2 (Expert Reviews). Must produce Phase 1 (Discover) output describing the product, positioning, and stage. Must then dispatch TWO subagents in parallel: (1) UX Architect to critique product positioning, funnel, mobile/accessibility gaps, competitive positioning; (2) Business Executive to critique go-to-market timing, pricing strategy, user acquisition projections, critical gaps vs. competitors. Must document where architect and exec reviews agree (e.g., both identify 'export/integration' as critical feature gap) and where they disagree (e.g., architect says 'focus on mobile', exec says 'research teams use desktop'). Must synthesize disagreements and make executive call with reasoning. Must update questions.md file documenting expert insights and decisions made. Must produce strategy document informed by both reviews, with callouts to which strategies the experts specifically recommended. Should NOT skip Phase 2 (expert reviews), not dispatch only one reviewer, not produce generic strategy without referencing expert recommendations, not omit synthesis/conflict resolution.",
+      "files": []
     }
   ]
 }

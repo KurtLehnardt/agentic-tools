@@ -1,0 +1,29 @@
+{
+  "skill_name": "setup",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I have a PRD that lists required services: Supabase, Anthropic, and Stripe. I have a .env.local with some existing keys. Please set up the environment for my Next.js project — detect all services from the PRD, check what credentials I already have, and generate a complete .env file with status markers.",
+      "expected_output": "Must execute Phase 1 (SERVICE DETECTION from PRD) and read the service manifest directly rather than dispatching Explore. Must complete Phase 2 (CREDENTIAL CHECK) by reading .env.local for existing keys. Must generate .env.local file (Phase 3) with clear [STATUS: READY/PARTIAL/MISSING] markers on each service block. Must include Phase 5 (VALIDATION) attempts for detected services. Must output Phase 6 (READINESS REPORT) naming each service and whether /build can proceed. Should NOT print actual secret values into chat output. Should NOT commit .env file to git.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "i'm starting a new react app with supabase, stripe, and twilio integrations. need to get the environment set up but i haven't created any .env yet. help me set up credentials.",
+      "expected_output": "Must dispatch Explore subagent (Phase 1) to scan codebase for environment variables, SDK imports, and service references in package.json and source files. Should detect Supabase, Stripe, Twilio as required services from code analysis. Must execute Phase 2 (CREDENTIAL CHECK) examining current shell environment and missing .env file. Must generate .env template (Phase 3) with entries for SUPABASE_URL, STRIPE_SECRET_KEY, TWILIO_AUTH_TOKEN, and other required vars. Should include direct signup URLs for missing services (Supabase dashboard link, Stripe API keys page, Twilio console). Must validate .gitignore includes .env* patterns before generation. Should NOT use the tone of the response to determine which services are important — must read code, not infer from request register.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Set up environment. I have 1Password CLI installed and my project is tagged as 'podcast-app'. Supabase and Anthropic are in my vault, but I still need Stripe and a new Firebase API key.",
+      "expected_output": "Must execute Phase 2 (CREDENTIAL CHECK) in correct order: first check .env/current shell, then call 1Password CLI with `op item list --tags podcast-app` to retrieve vault items. Must categorize credentials as READY (Supabase, Anthropic found in vault), PARTIAL (Firebase exists but outdated), MISSING (Stripe not found). Must NOT prompt for 1Password password interactively — only use CLI if already authenticated. Must include Phase 3 output with status markers showing which services came from vault vs .env. Must list direct Firebase console link and Stripe API key dashboard for MISSING services. Should validate that retrieved secrets from vault are not logged into chat.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "setup my project. i have supabase and stripe working, but no anthropic api key and i can't get one right now.",
+      "expected_output": "Must detect Anthropic as a required service (Phase 1) from codebase if PRD absent. Must complete Phase 2 and report Anthropic status as MISSING, blocking /build readiness. Must categorize Supabase and Stripe as READY in Phase 2 credential check. Phase 6 (READINESS REPORT) must show at least one BLOCKING service with explicit action item and direct signup link (https://console.anthropic.com). Must NOT fabricate, generate, or suggest workarounds to create an Anthropic API key. Must NOT suggest using a production or shared key. Should indicate Optional services (if any) do not block readiness, but MISSING required services do. Should provide exact error message format for what /build will encounter if it runs without Anthropic credentials.",
+      "files": []
+    }
+  ]
+}
