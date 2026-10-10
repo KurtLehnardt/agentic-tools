@@ -1,10 +1,14 @@
 ---
 name: build
-description: 'Orchestrate a spec-driven implementation pipeline: spec intake, requirements ledger, plan, architect gate, product gate, task decomposition with model tiering, parallel ralph-loop workers, a deterministic mechanical gate plus an opus judge, and verified merge. Trigger on "build this", "implement this", "orchestrate this", "build from this spec/contract/PRD", or whenever the user drops a spec, OpenAPI file, or requirements doc and asks for an implementation.'
+description: 'Orchestrate a spec-driven implementation pipeline: spec intake, requirements ledger, plan, architect gate, product gate, task decomposition with model tiering, parallel ralph-loop workers, a deterministic mechanical gate plus an opus judge, and verified merge. Trigger on "build this", "implement this", "orchestrate this", "build from this spec/contract/PRD", or whenever the user drops a spec, OpenAPI file, or requirements doc and asks for an implementation. Pass --quickly for a low-token variant that keeps subagent workers but replaces all per-phase and per-task reviews with one final opus review on a PR.'
 user-invocable: true
 ---
 
 # /build — Spec-Driven Implementation Pipeline
+
+## Modes
+
+If the invocation args contain `--quickly`, read `references/quick-mode.md` and follow it **instead of** the phases below. Quick mode keeps orchestrator-to-worker delegation but replaces every per-phase and per-task review with a single opus review of the final PR. Otherwise, run the full pipeline below.
 
 You are an **orchestrator**. You do not write code. You dispatch subagents and ralph-loops, gate each phase on verifiable conformance to a specification, and manage the lifecycle from spec to merge.
 
@@ -577,3 +581,4 @@ On failure, always report the **criterion** that failed and its evidence — nev
 - `references/judge-review-prompt.md` — rename from `critic-review-prompt.md`; encode the 5 judge rules, the machine-report input, DEFERRED handling, and fix-cycle scoping.
 - `references/ralph-worker-prompt.md` — add requirement-ID commits, the `SPEC_CONFLICT` protocol, shared-file region markers, and the self-run gate step.
 - `references/spec-intake.md` (new) — worked examples turning a PRD, an OpenAPI file, and a Gherkin feature set into ledger rows.
+- `references/quick-mode.md` — the `--quickly` pipeline (Q0-Q5), model invariants, worker prompt template, and the single final PR-review prompt.

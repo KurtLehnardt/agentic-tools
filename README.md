@@ -84,6 +84,8 @@ The core engine. Runs a 7-phase pipeline with scored quality gates:
 6. **Critic Review** — Code review per worker, >= 9.5/10 to commit
 7. **Merge & Cleanup** — Merge approved branches, clean worktrees
 
+**`--quickly`** — `/build --quickly` is a low-token variant. It keeps the orchestrator and subagent-worker pattern (isolated worktrees, deterministic `gate-check.sh`) but drops the architect and product gates and all per-task review. It ends with one opus review of the full PR and at most one fix round. The PR is never merged for you. Not for BINDING contracts, production migrations, or auth rewrites; use the full pipeline for those. See `skills/build/references/quick-mode.md`.
+
 ### `/test` — Coverage
 Analyzes existing code for coverage gaps, prioritizes by risk (auth, payments, data mutations first), and generates comprehensive test suites following existing patterns. Does not modify implementation.
 
