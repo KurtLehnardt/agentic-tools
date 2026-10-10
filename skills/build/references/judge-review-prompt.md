@@ -15,7 +15,7 @@ All verdicts are binary. There are no scores and no thresholds.
 
 ## Process
 
-1. Read the machine report. If `machine_verdict` is not PASS, stop: you should not have been dispatched. Report it and do not judge.
+1. Read the machine report. If `machine_verdict` is not PASS, stop: you should not have been dispatched. Do not judge. Emit a `|||JUDGE_VERDICT|||` block with `"verdict": "REVISE"`, `machine_gate.verdict` set to the report's value, empty `requirements` and `definition_of_done`, and one blocking issue: `machine gate FAIL — see [report path]`. The orchestrator sends it straight back to the worker.
 2. Read the diff against the task's diff base (`BUILD_DIFF_BASE` if provided, else the `base_ref` in config.json). Read every changed line.
 3. For each requirement, locate the implementing code and the test that exercises it. Decide MET or NOT_MET on the criterion's intent, not just on a green test. Does the assertion check the stated outcome, or only that something was returned?
 4. Walk the Definition of Done line by line.
