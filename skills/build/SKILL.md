@@ -304,14 +304,23 @@ Definition of Done:
 
 ## Phase 4.5: DISPATCH PLAN & BASELINE
 
+### Gate invocation (used by every phase below)
+
+Build state (`config.json`, `tasks/`, `baseline.json`, `gate/`) lives only in the main checkout's `.claude/build/` and is untracked, so worktrees do not contain it. `scripts/` lives in the skill directory, not the target repo. Resolve two absolute paths once and use them everywhere:
+
+- `GATE` — absolute path to this skill's `scripts/gate-check.sh`.
+- `STATE` — absolute path to the main checkout's `.claude/build`.
+
+Run the gate as `BUILD_STATE_DIR="$STATE" "$GATE" tNN` (or `--integration`) from inside the worktree. The script reads config, manifests, and baseline from `$STATE`, writes reports to `$STATE/gate/`, and runs commands and diffs in the worktree it is invoked from. Single source of truth: no copies to go stale, nothing untracked in the worktree.
+
 ### Capture the baseline first
 
 If `main` is already red — one flaky test, one pre-existing type error — every judge fails every task forever and burns five cycles each. Before dispatching anything, run the validation suite on the base commit and record it:
 
 ```bash
 git checkout <base_ref>
-scripts/gate-check.sh --integration    # writes .claude/build/gate/integration.json
-cp .claude/build/gate/integration.json .claude/build/baseline.json
+BUILD_STATE_DIR="$STATE" "$GATE" --integration    # writes $STATE/gate/integration.json
+cp "$STATE/gate/integration.json" "$STATE/baseline.json"
 ```
 
 `gate-check.sh` then gates on **delta**: a check already failing at baseline is reported as `known_failing_at_baseline` rather than as this task's regression. Scope violations and test tampering get no such tolerance — there is no baseline excuse for those.
@@ -349,7 +358,10 @@ It compares git progress against assigned steps, detects stalls, scope drift, an
 ```bash
 git fetch origin
 git worktree add .claude/worktrees/tNN-description "$BASE_REF" -b build/tNN-description
-printf 'NUDGE.md\n.NUDGE.md.tmp\n' >> .claude/worktrees/tNN-description/.gitignore
+# Ignore supervisor files via the shared info/exclude, not a tracked .gitignore (would trip the scope check)
+EXCL="$(git rev-parse --git-common-dir)/info/exclude"
+mkdir -p "$(dirname "$EXCL")"
+for pat in NUDGE.md .NUDGE.md.tmp; do grep -qxF "$pat" "$EXCL" 2>/dev/null || printf '%s\n' "$pat" >> "$EXCL"; done
 ```
 
 **Worktree enforcement is non-negotiable.** If `git worktree add` fails, create it manually and instruct the worker to `cd` in before touching anything. If worktrees are impossible, fall back to sequential execution on branches. Parallel agents sharing a working directory will corrupt each other's changes — not theoretical, it happens every time.
@@ -364,6 +376,7 @@ Agent tool: subagent_type="general-purpose", model=[TIER], prompt=
 ## Your Assignment
 Task: [TASK_ID]   Branch: build/tNN-description
 Working directory: .claude/worktrees/tNN-description   Model tier: [TIER]
+Gate script: [GATE]   Build state dir: [STATE]
 
 ### Requirements you own:
 [LEDGER ROWS — id, criterion, verification method]
@@ -392,9 +405,9 @@ Working directory: .claude/worktrees/tNN-description   Model tier: [TIER]
 ## Self-verification before completion
 Run the mechanical gate yourself before declaring done:
 
-    scripts/gate-check.sh [TASK_ID]
+    BUILD_STATE_DIR=[STATE] [GATE] [TASK_ID]
 
-It must exit 0. It checks the same things the judge will check, from the same
+Run it from your worktree. It must exit 0. It checks the same things the judge will check, from the same
 script, so there is no benefit in guessing — read its report and fix what it
 flags. Then walk the remaining DoD lines and confirm each.
 
@@ -422,10 +435,10 @@ Independent tasks dispatch simultaneously; dependent tasks wait for `TASK_COMPLE
 ### Step 1 — deterministic gate (no model)
 
 ```bash
-scripts/gate-check.sh tNN
+BUILD_STATE_DIR="$STATE" "$GATE" tNN    # run from the task's worktree
 ```
 
-This runs the validation suite, every binding contract's check command, the scope diff, the test-tampering diff, and the baseline delta, then writes `.claude/build/gate/tNN.json` with real exit codes. Nothing here is a model's account of what happened; the outputs are the commands' own.
+This runs the validation suite, every binding contract's check command, the scope diff, the test-tampering diff, and the baseline delta, then writes `$STATE/gate/tNN.json` with real exit codes. Nothing here is a model's account of what happened; the outputs are the commands' own.
 
 **If it exits non-zero, do not dispatch a judge.** Send the report straight back to the worker as a fix cycle. Paying opus rates to have a model run `git diff --name-only` is waste, and asking it to *report* an exit code it didn't produce is the hole this closes.
 
@@ -489,7 +502,7 @@ A judge with no memory of round one surfaces fresh nitpicks each pass and burns 
 ## Phase 7: MERGE & VERIFY
 
 1. Merge in dependency order, foundations first, `t99` integration task last.
-2. After each merge, run `scripts/gate-check.sh --integration` on the target branch.
+2. After each merge, run `BUILD_STATE_DIR="$STATE" "$GATE" --integration` on the target branch.
 3. On conflict, dispatch a conflict-resolution subagent (sonnet, opus on second failure) scoped to resolving the conflict only — no new behavior.
 
 ```bash
@@ -502,7 +515,7 @@ git worktree remove .claude/worktrees/tNN-description && git branch -d build/tNN
 Per-task judges verified tasks in isolation, and every `scope: integration` requirement is still unverified. After all merges:
 
 ```bash
-scripts/gate-check.sh --integration
+BUILD_STATE_DIR="$STATE" "$GATE" --integration
 ```
 
 Then dispatch a final judge (opus) over the **full ledger**, running every verification method including the deferred ones (perf, a11y, cross-service). It must return a verdict covering every requirement ID with no DEFERRED remaining. Write it to `.claude/build/final-verdict.json`.
