@@ -18,16 +18,30 @@
  *     "trend_series":  [{year,month,volume}] | null,   // absolute monthly volumes, oldest first
  *     "cpc":           number | null,
  *     "competition":   number | null,          // 0..1
- *     "source":        "dataforseo"|"semrush"|"ahrefs"|"csv",
- *     "confidence":    "Data" | "NoData",      // only these two values, ever
+ *     "source":        "dataforseo"|"semrush"|"ahrefs"|"csv"|"dataforseo-sandbox",
+ *     "confidence":    "Data" | "NoData" | "Sandbox",   // only these three, ever
  *     "country":       string,                 // as passed to --country
  *     "fetched":       "YYYY-MM-DD"
  *   }
  *
- * `confidence` is "Data" for any row an API or a CSV actually returned, and "NoData"
- * for a query the provider did not return a row for. A NoData row is never dropped:
- * the caller must be able to tell "zero demand" (volume 0, confidence Data) apart
- * from "provider returned nothing" (volume null, confidence NoData).
+ * `confidence` is "Data" for any row a live API or a CSV actually returned, and
+ * "NoData" for a query the provider did not return a row for. A NoData row is never
+ * dropped: the caller must be able to tell "zero demand" (volume 0, confidence Data)
+ * apart from "provider returned nothing" (volume null, confidence NoData).
+ *
+ * "Sandbox" is the third and only other value, produced solely by --sandbox. It marks
+ * a row that came from the DataForSEO sandbox host, whose response is canned fixture
+ * data with no relation to the keywords that were requested. Data means measured
+ * truth; a fixture is not a measurement, so a sandbox row is never emitted as Data,
+ * carries source "dataforseo-sandbox", and is never written to the cache.
+ *
+ * ROW MATCHING. Every adapter maps returned rows back to requested queries by
+ * comparing the provider's own keyword field (DataForSEO result[].keyword, Semrush
+ * column Ph, Ahrefs keywords[].keyword) against the request, normalized to lowercase
+ * with collapsed whitespace. Nothing is ever matched by array position. Providers are
+ * free to reorder rows, omit zero-volume keywords, or return extra rows; output is
+ * built by iterating the requested queries, so a returned row that matches no request
+ * is discarded rather than emitted, and a request with no returned row becomes NoData.
  *
  * `trend_series` carries ABSOLUTE monthly volumes only. Semrush's trend column (Td)
  * is a relative 0.00-1.00 index, not a volume, so Semrush rows always carry
@@ -106,6 +120,24 @@ OPTIONS
   --yes                  Skip the interactive spend confirmation.
   --no-cache             Bypass cache reads. Fresh results are still written to cache.
   --json                 Emit a single JSON array instead of JSON Lines (the default).
+  --sandbox              Call https://sandbox.dataforseo.com instead of the live
+                         DataForSEO host. For adapter testing only.
+
+                         THE NUMBERS IT RETURNS ARE NOT REAL SEARCH VOLUMES. The
+                         sandbox returns canned fixture rows that bear no relation to
+                         the keywords sent; a single-keyword request has been observed
+                         returning four unrelated rows such as "seo", "phone" and
+                         "watch". Do not use the output for analysis, for scoring, or
+                         for any decision.
+
+                         The flag is free, needs no verified account, and uses the same
+                         DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD. It implies
+                         --provider dataforseo and is rejected with any other provider.
+                         Every row it produces is labeled confidence "Sandbox" (never
+                         "Data") and source "dataforseo-sandbox", nothing is read from
+                         or written to the cache, no spend gate or confirmation applies,
+                         and a prominent warning is printed to stderr before and after
+                         the rows.
   --help                 Print this help and exit 0.
 
 ENVIRONMENT VARIABLES
@@ -137,8 +169,19 @@ COST NOTES
               runs do not pay for the probe again.
   csv         Free.
 
+OUTPUT
+  One record per de-duplicated query, in input order, same keys for every provider.
+  confidence is "Data" (a live API or CSV returned the row), "NoData" (the provider
+  returned no row for that query), or "Sandbox" (--sandbox fixture, never real).
+  Rows are matched to queries by the provider's own keyword field, normalized to
+  lowercase with collapsed whitespace, never by array position. A provider may
+  reorder rows or omit zero-volume keywords without a volume landing on the wrong
+  query: returned rows matching no request are discarded, and a request with no
+  returned row becomes NoData rather than being dropped.
+
 CACHE
   ~/.cache/market-interest/volumes.json, keyed "provider|country|query".
+  --sandbox is never cached, in either direction; see that flag above.
   TTL 30 days for semrush (hard limit, licensing — see the comment in the source),
   90 days for every other provider. CSV results are not cached. Only rows with
   confidence "Data" are cached, so a NoData answer is always retried next run.
@@ -291,7 +334,7 @@ function noDataRow(query, source, country) {
 
 const KNOWN_FLAGS = new Set([
   '--queries', '--provider', '--country', '--keywords', '--check-keys',
-  '--max-spend', '--yes', '--no-cache', '--json', '--help', '-h',
+  '--max-spend', '--yes', '--no-cache', '--json', '--sandbox', '--help', '-h',
 ]);
 
 function parseArgs(argv) {
@@ -305,6 +348,7 @@ function parseArgs(argv) {
     yes: false,
     noCache: false,
     json: false,
+    sandbox: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -329,6 +373,7 @@ function parseArgs(argv) {
       case '--yes': opts.yes = true; break;
       case '--no-cache': opts.noCache = true; break;
       case '--json': opts.json = true; break;
+      case '--sandbox': opts.sandbox = true; break;
       case '--help':
       case '-h': opts.help = true; break;
       default:
@@ -580,6 +625,19 @@ function noProviderMessage() {
  *   4. none -> exit 3 with an actionable message
  */
 function resolveProvider(opts) {
+  // --sandbox only exists for DataForSEO; no other provider has a free fixture host.
+  if (opts.sandbox) {
+    if (opts.provider && opts.provider !== 'dataforseo') {
+      fail(`--sandbox only applies to the dataforseo provider, but --provider ${opts.provider} was requested.`);
+    }
+    if (!isConfigured('dataforseo')) {
+      fail(
+        '--sandbox needs DataForSEO credentials; the sandbox host authenticates with the same ' +
+          `login and password as the live host. Missing: ${missingEnv('dataforseo').join(', ')}.`,
+      );
+    }
+    return 'dataforseo';
+  }
   if (opts.provider) {
     if (!PROVIDERS[opts.provider]) {
       fail(`unknown --provider "${opts.provider}". Choose dataforseo, semrush or ahrefs.`);
@@ -801,6 +859,17 @@ function costPreflight(provider, queries, pending, opts, state) {
     info(`provider csv: parsing ${opts.keywords} for ${queries.length} query/queries. No API calls, no cost.`);
     return;
   }
+  // The sandbox host is free, so there is nothing to gate or confirm. The banner is
+  // the point of this branch: it must appear before the fixture numbers do.
+  if (opts.sandbox) {
+    writeSandboxBanner();
+    info(
+      `provider ${SANDBOX_SOURCE}: ${queries.length} query/queries, country ${opts.country}. ` +
+        'The sandbox host is free, so no spend gate and no confirmation apply, and the cache is ' +
+        'bypassed in both directions.',
+    );
+    return;
+  }
   info(
     `provider ${provider}: ${queries.length} query/queries, ${pending} not served from cache, ` +
       `country ${opts.country}`,
@@ -866,6 +935,49 @@ function costPreflight(provider, queries, pending, opts, state) {
  * https://docs.dataforseo.com/v3/keywords_data/google_ads/search_volume/live/
  * ========================================================================= */
 
+const DFS_PATH = '/v3/keywords_data/google_ads/search_volume/live';
+const DFS_LIVE_ENDPOINT = `https://api.dataforseo.com${DFS_PATH}`;
+const DFS_SANDBOX_ENDPOINT = `https://sandbox.dataforseo.com${DFS_PATH}`;
+
+/**
+ * The sandbox host accepts the same credentials, charges nothing, and returns the
+ * identical envelope shape, but its result[] is canned fixture data with no relation
+ * to the request. A one-keyword request has been observed returning result_count 4
+ * with the rows "seo", "phone", "lkjhgfvbnm" and "watch".
+ *
+ * Because the keyword-field matching in fetchDataForSEO is by name and never by array
+ * position, those fixture rows cannot land on a requested query: they match nothing
+ * and are discarded, and the real query comes back NoData. The labeling below exists
+ * for the case where a fixture row DOES happen to share a requested keyword, and so
+ * that no sandbox row can ever be mistaken for a measurement downstream.
+ */
+const SANDBOX_SOURCE = 'dataforseo-sandbox';
+
+function writeSandboxBanner() {
+  const bar = '='.repeat(80);
+  process.stderr.write(
+    `${[
+      '',
+      bar,
+      'SANDBOX MODE. THE NUMBERS IN THIS OUTPUT ARE NOT REAL SEARCH VOLUMES.',
+      '',
+      'This run queried the DataForSEO sandbox host',
+      `  ${DFS_SANDBOX_ENDPOINT}`,
+      'which returns canned fixture rows that bear no relation to the keywords that',
+      'were sent. A single-keyword request has been observed coming back with four',
+      'unrelated rows such as "seo", "phone" and "watch".',
+      '',
+      `Every row produced here is labeled confidence "Sandbox" and source`,
+      `"${SANDBOX_SOURCE}", and none of it is written to the cache.`,
+      '',
+      'Do not use these numbers for analysis, for scoring, or for any decision. This',
+      'flag exists only to integration-test the adapter without spending money.',
+      bar,
+      '',
+    ].join('\n')}`,
+  );
+}
+
 // Only us=2840 is verified first-hand. Any other market needs an explicit
 // DATAFORSEO_LOCATION_CODE rather than a guessed code.
 const DFS_LOCATION_CODES = { us: 2840 };
@@ -923,7 +1035,7 @@ async function fetchDataForSEO(queries, country, state) {
     try {
       const { res, text } = await httpRequest(
         'dataforseo',
-        'https://api.dataforseo.com/v3/keywords_data/google_ads/search_volume/live',
+        state.sandbox ? DFS_SANDBOX_ENDPOINT : DFS_LIVE_ENDPOINT,
         {
           method: 'POST',
           headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
@@ -1523,7 +1635,16 @@ async function main() {
   // re-charged) on every single invocation. --no-cache bypasses row reads only; the
   // verdict is a capability fact about the API, not keyword data, so it still applies.
   const ahrefsHistoryLoaded = provider === 'ahrefs' ? loadAhrefsHistorySupport() : undefined;
+
+  // Sandbox rows are fixtures, not measurements. They get their own source string and
+  // their own confidence value so that a piped or re-read row can never be mistaken
+  // for real data, and they are never cached, because caching a fixture under a real
+  // provider key would poison every later live run.
+  const sourceLabel = opts.sandbox ? SANDBOX_SOURCE : provider;
+  const dataConfidence = opts.sandbox ? 'Sandbox' : 'Data';
+
   const state = {
+    sandbox: opts.sandbox,
     failed: false,
     dfsCost: 0,
     semrushLines: 0,
@@ -1534,7 +1655,7 @@ async function main() {
   };
 
   /* ---- cache read ------------------------------------------------------- */
-  const cacheable = provider !== 'csv';
+  const cacheable = provider !== 'csv' && !opts.sandbox;
   const store = cacheable ? loadCache() : {};
   const fromCache = new Map();
   const toFetch = [];
@@ -1573,9 +1694,11 @@ async function main() {
       rows.push({ ...cached.payload, query: q, fetched: cached.fetched });
       continue;
     }
+    // Looked up by the normalized query, never by position, so a provider row that
+    // matches no request is simply never read and a request with no row is NoData.
     const hit = fetched.get(k);
     if (!hit) {
-      rows.push(noDataRow(q, provider, opts.country));
+      rows.push(noDataRow(q, sourceLabel, opts.country));
       continue;
     }
     const row = makeRow({
@@ -1585,8 +1708,8 @@ async function main() {
       trend_series: hit.trend_series ?? null,
       cpc: hit.cpc ?? null,
       competition: hit.competition ?? null,
-      source: provider,
-      confidence: 'Data',
+      source: sourceLabel,
+      confidence: dataConfidence,
       country: opts.country,
     });
     rows.push(row);
@@ -1614,7 +1737,10 @@ async function main() {
 
   /* ---- actual cost reporting ------------------------------------------- */
   if (provider === 'dataforseo' && state.dfsCost > 0) {
-    info(`actual dataforseo cost reported by the API: $${state.dfsCost.toFixed(4)}`);
+    info(
+      `actual ${sourceLabel} cost reported by the API: $${state.dfsCost.toFixed(4)}` +
+        (opts.sandbox ? ' (sandbox; a non-zero figure here is fixture data too)' : ''),
+    );
   }
   if (provider === 'semrush' && state.semrushLines > 0) {
     info(
@@ -1635,8 +1761,14 @@ async function main() {
     );
   }
 
-  const noData = rows.filter((r) => r.confidence === 'NoData').length;
-  info(`done: ${rows.length} record(s), ${rows.length - noData} Data, ${noData} NoData, source ${provider}`);
+  const count = (c) => rows.filter((r) => r.confidence === c).length;
+  info(
+    `done: ${rows.length} record(s), ${count(dataConfidence)} ${dataConfidence}, ` +
+      `${count('NoData')} NoData, source ${sourceLabel}`,
+  );
+
+  // Repeated after the rows so the warning cannot scroll out of sight above them.
+  if (opts.sandbox) writeSandboxBanner();
 
   return state.failed ? 5 : 0;
 }
