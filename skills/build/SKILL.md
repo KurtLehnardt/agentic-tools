@@ -26,9 +26,9 @@ Phase 2: ARCHITECT GATE  → Binary technical conformance checklist
 Phase 3: PRODUCT GATE    → Binary acceptance-criteria checklist
 Phase 4: DECOMPOSE       → Tasks, file-ownership protocol, complexity → model tier, DoD
 Phase 4.5: DISPATCH PLAN → Cost/tier preview + baseline capture + human go/no-go
-Phase 5: SWARM           → Tiered one-shot workers + babysit supervisor
-Phase 6: GATE + JUDGE    → Deterministic gate-check.sh, then opus judge on the remainder
-Phase 7: MERGE & VERIFY  → Merge in dependency order, integration gate, rollback if needed
+Phase 5: SWARM           → Tiered one-shot workers + babysit supervisor; assembly branch created
+Phase 6: GATE + JUDGE    → Deterministic gate-check.sh, then opus judge; APPROVED tasks merge into assembly
+Phase 7: VERIFY & DELIVER → Final integration gate + judge on assembly branch, deliver to target, rollback if needed
 ```
 
 ---
@@ -280,9 +280,12 @@ Write `.claude/build/tasks/tNN.json` — `gate-check.sh` reads this:
   "deferred_requirements": ["R-002"],
   "owned_files": ["src/auth/token.ts", "src/auth/middleware.ts", "tests/auth/token.spec.ts"],
   "shared_files": ["src/auth/index.ts"],
-  "depends_on": ["t01"]
+  "depends_on": ["t01"],
+  "diff_base": null
 }
 ```
+
+`diff_base` is `null` until dispatch. For a task with `depends_on`, the orchestrator records the assembly head sha there (see Phase 5, "Incremental assembly"); `gate-check.sh` ignores it, the orchestrator passes it as `BUILD_DIFF_BASE`.
 
 ### Per-task Definition of Done
 
@@ -337,6 +340,7 @@ Report the dispatch plan and wait for a go-ahead:
 6 tasks: 3 haiku (S), 2 sonnet (M), 1 opus (L) + 6 opus judges + 1 integration judge.
 Max 4 concurrent. Est. wall clock ~40m. Baseline: 1 known-failing check (typecheck).
 Rollback tag: build/pre-20260814-1630
+Assembly: build/assembly-<slug>; 2 tasks wait on dependencies.
 ```
 
 Confirm explicitly if more than 3 tasks land on opus — that usually means the decomposition is too coarse, and splitting is cheaper than the model bill.
@@ -351,18 +355,35 @@ Confirm explicitly if more than 3 tasks land on opus — that usually means the 
 /loop 5m /babysit
 ```
 
-It compares git progress against assigned steps, detects stalls, scope drift, and repeated failures, and atomically writes `NUDGE.md` into a drifting worktree; workers read and delete it before each step. It also watches **requirement drift** — commits referencing requirement IDs outside the task's assignment are the earliest visible sign of scope creep. Auto-stops at zero `build/*` worktrees or 2 hours.
+It compares git progress against assigned steps, detects stalls, scope drift, and repeated failures, and atomically writes `NUDGE.md` into a drifting worktree; workers read and delete it before each step. It also watches **requirement drift** — commits referencing requirement IDs outside the task's assignment are the earliest visible sign of scope creep. It watches only worker worktrees (`build/tNN-*`); the assembly worktree (`build/assembly-<slug>`) is ignored and does not keep it alive. Auto-stops at zero worker worktrees or 2 hours.
 
 ### Worktree setup
 
+**Assembly branch.** At the start of Phase 5 create it from `base_ref` in its own worktree, so the main checkout is never switched (naming mirrors quick mode's `build/quick-<slug>`):
+
 ```bash
 git fetch origin
-git worktree add .claude/worktrees/tNN-description "$BASE_REF" -b build/tNN-description
+git worktree add .claude/worktrees/assembly-<slug> -b build/assembly-<slug> "$BASE_REF"
+```
+
+Task worktrees:
+
+```bash
+git worktree add .claude/worktrees/tNN-description "$BASE_REF" -b build/tNN-description   # no depends_on
 # Ignore supervisor files via the shared info/exclude, not a tracked .gitignore (would trip the scope check)
 EXCL="$(git rev-parse --git-common-dir)/info/exclude"
 mkdir -p "$(dirname "$EXCL")"
 for pat in NUDGE.md .NUDGE.md.tmp; do grep -qxF "$pat" "$EXCL" 2>/dev/null || printf '%s\n' "$pat" >> "$EXCL"; done
 ```
+
+A task with **any** `depends_on` is dispatched only once ALL its dependencies are merged into the assembly branch (Phase 6). Its worktree then branches from the assembly head:
+
+```bash
+git worktree add .claude/worktrees/tNN-description -b build/tNN-description build/assembly-<slug>
+BASE_SHA=$(git rev-parse build/assembly-<slug>)   # record as "diff_base" in tasks/tNN.json
+```
+
+Pass `BUILD_DIFF_BASE=$BASE_SHA` to **every** gate run for that task: the worker's self-check, the Phase 6 gate, and every fix cycle. Without it the dependencies' merged files would count as this task's scope changes.
 
 **Worktree enforcement is non-negotiable.** If `git worktree add` fails, create it manually and instruct the worker to `cd` in before touching anything. If worktrees are impossible, fall back to sequential execution on branches. Parallel agents sharing a working directory will corrupt each other's changes — not theoretical, it happens every time.
 
@@ -405,9 +426,9 @@ Gate script: [GATE]   Build state dir: [STATE]
 ## Self-verification before completion
 Run the mechanical gate yourself before declaring done:
 
-    BUILD_STATE_DIR=[STATE] [GATE] [TASK_ID]
+    BUILD_STATE_DIR=[STATE] [BUILD_DIFF_BASE=[BASE_SHA]] [GATE] [TASK_ID]
 
-Run it from your worktree. It must exit 0. It checks the same things the judge will check, from the same
+Include `BUILD_DIFF_BASE` only if a base sha is given in your assignment. Run it from your worktree. It must exit 0. It checks the same things the judge will check, from the same
 script, so there is no benefit in guessing — read its report and fix what it
 flags. Then walk the remaining DoD lines and confirm each.
 
@@ -426,7 +447,7 @@ Giving workers the same gate script the judge runs is deliberate: it turns revie
 
 ### Parallelism
 
-Independent tasks dispatch simultaneously; dependent tasks wait for `TASK_COMPLETE`. **Max 4 concurrent.** Start L/XL tasks first — longest tail. Single-session environments dispatch one at a time; note the reduced parallelism in the Phase 4 report.
+Independent tasks dispatch simultaneously; dependent tasks wait until all their dependencies are **merged into the assembly branch** (APPROVED in Phase 6), not merely `TASK_COMPLETE`. **Max 4 concurrent.** Start L/XL tasks first — longest tail. Single-session environments dispatch one at a time; note the reduced parallelism in the Phase 4 report.
 
 ---
 
@@ -435,8 +456,10 @@ Independent tasks dispatch simultaneously; dependent tasks wait for `TASK_COMPLE
 ### Step 1 — deterministic gate (no model)
 
 ```bash
-BUILD_STATE_DIR="$STATE" "$GATE" tNN    # run from the task's worktree
+BUILD_STATE_DIR="$STATE" [BUILD_DIFF_BASE="$BASE_SHA"] "$GATE" tNN    # run from the task's worktree
 ```
+
+`BUILD_DIFF_BASE` is set for tasks with `depends_on` (their `diff_base` from the manifest) and omitted otherwise.
 
 This runs the validation suite, every binding contract's check command, the scope diff, the test-tampering diff, and the baseline delta, then writes `$STATE/gate/tNN.json` with real exit codes. Nothing here is a model's account of what happened; the outputs are the commands' own.
 
@@ -497,32 +520,52 @@ cycles may not be promoted to blockers. Previous verdicts: [HISTORY]
 
 A judge with no memory of round one surfaces fresh nitpicks each pass and burns the cycle limit on churn rather than on the real defect. Promote the worker one tier on the second REVISE. Max 5 cycles, then escalate with full verdict history. Review each task independently — never batch.
 
----
+### Merge into the assembly branch
 
-## Phase 7: MERGE & VERIFY
-
-1. Merge in dependency order, foundations first, `t99` integration task last.
-2. After each merge, run `BUILD_STATE_DIR="$STATE" "$GATE" --integration` on the target branch.
-3. On conflict, dispatch a conflict-resolution subagent (sonnet, opus on second failure) scoped to resolving the conflict only — no new behavior.
+A task is merged only after **APPROVED** (machine gate PASS and judge APPROVED), never on worker completion alone. Merge from the assembly worktree, in dependency order, same message format as before:
 
 ```bash
-git merge build/tNN-description --no-ff -m "feat(tNN): description [R-001,R-004] — gate PASS, judge APPROVED"
-git worktree remove .claude/worktrees/tNN-description && git branch -d build/tNN-description
+git -C .claude/worktrees/assembly-<slug> merge build/tNN-description --no-ff -m "feat(tNN): description [R-001,R-004] — gate PASS, judge APPROVED"
+(cd .claude/worktrees/assembly-<slug> && BUILD_STATE_DIR="$STATE" "$GATE" --integration)
+git worktree remove .claude/worktrees/tNN-description && git branch -D build/tNN-description   # -D: tip is in assembly
 ```
+
+- On conflict, dispatch the conflict-resolution subagent (sonnet, opus on second failure), scoped to the conflict only.
+- If the `--integration` gate regresses against baseline after a merge, run a scoped fix loop on that task before merging or dispatching anything else; dependents stay waiting. If it cannot be fixed, `git revert -m 1` the merge on the assembly branch and treat the task as BLOCKED.
+- Dependents whose deps are now all merged are dispatched next (Phase 5).
+- `REVISE` (until fixed), `BLOCKED`, and `SPEC_CONFLICT` tasks are not merged; their dependents wait and are reported.
+
+---
+
+## Phase 7: VERIFY & DELIVER
+
+The assembly branch `build/assembly-<slug>` already holds every APPROVED task, merged in dependency order with a per-merge integration gate (Phase 6). `t99`, if any, merges like any other task.
 
 ### Integration gate
 
-Per-task judges verified tasks in isolation, and every `scope: integration` requirement is still unverified. After all merges:
+Per-task judges verified tasks in isolation, and every `scope: integration` requirement is still unverified. Run:
 
 ```bash
-BUILD_STATE_DIR="$STATE" "$GATE" --integration
+(cd .claude/worktrees/assembly-<slug> && BUILD_STATE_DIR="$STATE" "$GATE" --integration)
 ```
 
-Then dispatch a final judge (opus) over the **full ledger**, running every verification method including the deferred ones (perf, a11y, cross-service). It must return a verdict covering every requirement ID with no DEFERRED remaining. Write it to `.claude/build/final-verdict.json`.
+Then dispatch a final judge (opus) over the **full ledger** on the assembly branch, running every verification method including the deferred ones (perf, a11y, cross-service). It must return a verdict covering every requirement ID with no DEFERRED remaining. Write it to `.claude/build/final-verdict.json`.
+
+### Deliver
+
+Only after the integration gate and final judge pass, merge the assembly branch into the target branch and clean up:
+
+```bash
+git merge build/assembly-<slug> --no-ff -m "feat(build): <summary> — integration gate PASS, final judge APPROVED"
+BUILD_STATE_DIR="$STATE" "$GATE" --integration    # on the target branch
+git worktree remove .claude/worktrees/assembly-<slug> && git branch -d build/assembly-<slug>
+```
+
+On conflict, dispatch the conflict-resolution subagent (sonnet, opus on second failure) scoped to resolving the conflict only — no new behavior.
 
 ### Rollback
 
-If integration verification fails and a scoped fix loop can't resolve it in 3 attempts, don't leave the branch half-merged:
+If integration verification fails and a scoped fix loop can't resolve it in 3 attempts, don't leave the branch half-merged. While the assembly branch is unmerged, rollback is just dropping it: `git worktree remove --force .claude/worktrees/assembly-<slug> && git branch -D build/assembly-<slug>` (the target is untouched). After delivery:
 
 ```bash
 git reset --hard build/pre-<timestamp>        # unpushed
@@ -546,6 +589,9 @@ Report which requirement regressed, which merge introduced it, and the rollback 
 | Judge REVISEs 5× | Report full verdict history — shows whether it's one stubborn requirement or a moving target. |
 | Opus tier unavailable | HALT before the gate. Never downgrade a judge. |
 | Baseline red at Phase 4.5 | Report, gate on delta, proceed. |
+| Task `REVISE`, `BLOCKED`, or `SPEC_CONFLICT` with dependents | Not merged into assembly; dependents not dispatched (they wait); list all under the report. |
+| Merge conflict into assembly branch | Conflict-resolution subagent scoped to the conflict (sonnet, opus on second failure); escalate if it fails. |
+| `--integration` gate regresses after an assembly merge | Scoped fix loop on that task; else revert the merge on assembly and treat the task as BLOCKED. |
 | Integration verification unfixable | Roll back to the pre-build tag and report. |
 
 ---
@@ -573,7 +619,8 @@ One line per phase; detail only on failure.
 - **Phase 4.5**: "Baseline: 1 known-failing check. Rollback tag build/pre-20260814-1630. Proceed?"
 - **Phase 5**: "All N workers complete. 1 promoted haiku→sonnet. Babysit stopped."
 - **Phase 6**: "All N tasks APPROVED. 2 needed one fix cycle. Machine gate caught 3 issues before judging."
-- **Phase 7**: "Merged. Integration verification: N/N requirements MET. Done."
+- **Phase 6** (per task): "tNN APPROVED, merged into build/assembly-<slug> (k/N merged). Integration gate: PASS."
+- **Phase 7**: "Assembly: N tasks merged. Integration verification: N/N requirements MET. Delivered to <target>. Done."
 
 On failure, always report the **criterion** that failed and its evidence — never a number.
 

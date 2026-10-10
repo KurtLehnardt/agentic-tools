@@ -23,7 +23,7 @@ This runs `/babysit` every 5 minutes until stopped. You can also run it once for
 To stop the cron loop:
 - **From the orchestrator:** Run `/loop stop` to cancel the active `/babysit` loop.
 - **Manually:** Press `Ctrl+C` in the terminal running the loop, or close the session.
-- **Auto-stop:** The babysitter automatically exits (outputs nothing, does not reschedule) when it detects **zero active `build/*` worktrees**. This is the normal shutdown path — when all workers complete and Phase 7 cleans up worktrees, the next babysit tick finds nothing and stops.
+- **Auto-stop:** The babysitter automatically exits (outputs nothing, does not reschedule) when it detects **zero active worker worktrees** (`build/tNN-*`; the assembly worktree `build/assembly-<slug>` and quick mode's `build/quick-<slug>` never count). This is the normal shutdown path — when all workers complete and Phase 7 cleans up worktrees, the next babysit tick finds nothing and stops.
 
 ### Maximum Duration
 
@@ -35,7 +35,7 @@ This prevents runaway supervision if workers hang indefinitely.
 
 ## What This Skill Does Each Tick
 
-1. **Discover active worktrees** — find all `build/*` branches with active worktrees
+1. **Discover active worktrees** — find all `build/tNN-*` worker branches with active worktrees
 2. **Read each worker's original assignment** — from plan files and task metadata
 3. **Assess progress** — compare git history against assigned steps
 4. **Detect problems** — stalls, scope drift, repeated failures, no commits
@@ -55,9 +55,9 @@ For each worktree on a `build/tNN-*` branch, collect:
 - Last commit timestamp
 - Total commit count since branching from base
 
-Skip worktrees that are not on `build/*` branches. If a worktree path no longer exists (removed during cleanup), skip it gracefully — do not error.
+Skip worktrees that are not on `build/tNN-*` branches (including `build/assembly-*` and `build/quick-*`). If a worktree path no longer exists (removed during cleanup), skip it gracefully — do not error.
 
-**Auto-stop:** If zero `build/*` worktrees are found, output "No active workers. Babysit exiting." and stop (do not reschedule the next tick).
+**Auto-stop:** If zero `build/tNN-*` worktrees are found, output "No active workers. Babysit exiting." and stop (do not reschedule the next tick).
 
 ## Phase 2: Read Original Assignment
 
@@ -280,7 +280,7 @@ OVERALL: 10/22 steps complete across 4 workers
 
 The `/build` orchestrator should start `/babysit` automatically when entering Phase 5 (SWARM) and stop it when Phase 5 completes. One-shot workers read NUDGE.md from their worktree root before each step, so a nudge takes effect at the worker's next step boundary.
 
-The babysitter auto-stops when it finds zero active `build/*` worktrees or after 2 hours, whichever comes first.
+The babysitter auto-stops when it finds zero active `build/tNN-*` worktrees or after 2 hours, whichever comes first.
 
 ### Worker Responsibility
 
