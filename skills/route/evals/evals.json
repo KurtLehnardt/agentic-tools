@@ -16,7 +16,7 @@
     {
       "id": 3,
       "prompt": "/route — Implement a Stripe payment webhook receiver that validates signatures, idempotent-inserts transactions, and surfaces errors without data loss. This is for a $75M ARR company; silent failures cost USD thousands per hour. After implementation passes tests, our security team will gate this (their verdict). What model for the implementation owner? What for the verdict? Can the verdict run on Sonnet to save cost?",
-      "expected_output": "Should route owner to sonnet@medium or sonnet@high (high stakes, moderate complexity, novel payment logic). Should route verdict to opus@high ALWAYS, regardless of owner model — verdict is a gatekeeper role and must never route down. Must explicitly state: \"Never route the verdict down. The gatekeeper runs at the top rung regardless of what the owner used.\" Should NOT recommend verdict on sonnet, haiku, or local (even if owner succeeded on sonnet). Should explain gatekeeper principle: expensive judge is the insurance policy.",
+      "expected_output": "Should route owner to opus@high per the High-stakes row of the tier table. Should route verdict to opus@high ALWAYS, regardless of owner model — verdict is a gatekeeper role and must never route down. Must explicitly state: \"Never route the verdict down. The gatekeeper runs at the top rung regardless of what the owner used.\" Should NOT recommend verdict on sonnet, haiku, or local (even if owner succeeded on sonnet). Should explain gatekeeper principle: expensive judge is the insurance policy.",
       "files": []
     },
     {
@@ -33,8 +33,8 @@
     },
     {
       "id": 6,
-      "prompt": "Haiku produced output that technically passes the gate (all assertions pass), but it's obviously low-effort junk — stub code, doesn't match the design, no real logic. I have two options: (A) re-route to Sonnet, or (B) bump haiku to medium effort and retry. Which saves cost?",
-      "expected_output": "Should recommend option B: bump effort on haiku (low→medium) and retry BEFORE bumping model. Should explain the distinction: gate failure = contract mismatch (escalate model), low-quality junk = insufficient execution depth (escalate effort). Should state: \"Output is low-quality junk (churn, no real attempt) → bump effort (low→medium→high) before bumping model.\" Should NOT conflate gate passes with quality passes. Should explain that re-routing to sonnet after a low-effort attempt wastes budget — first try asking the current model to think harder (medium/high effort). Should explicitly state this saves cost.",
+      "prompt": "Route these 200 narrow docstring-generation tasks to our local Qwen instance to save money.",
+      "expected_output": "Must confirm which local runtime and model ids are actually available in this environment before routing to local, per SKILL.md's verify-before-use rule, rather than assuming a model is installed. Must recommend pairing local execution with /survive so the loop tolerates the smaller model's slips. Should NOT assume a local model is present, and should NOT route the verdict to local.",
       "files": []
     }
   ]

@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "What's running right now? /status",
-      "expected_output": "Output must include all five sections: REPOSITORY (current branch, commit SHA, build/test/type status), ACTIVE WORKTREES (names, commit counts, timestamps, PLAN completion %), RECENT SCORES (per-task architect/executive/critic scores and merge status), BLOCKERS (any pending tasks with clear dependency or rejection reasons), ENVIRONMENT (Supabase/Anthropic/Stripe connection status). Must show at least 2 active worktrees with distinct statuses. Review scores must be real data from roadmap-progress.json, not fabricated. Should NOT invent build states, test results, or scores that don't exist on disk.",
+      "expected_output": "Output must include all five sections: REPOSITORY (current branch, commit SHA, build/test/type status), ACTIVE WORKTREES (names, commit counts, timestamps, PLAN completion %), RECENT SCORES (per-task architect/executive/critic scores and merge status), BLOCKERS (any pending tasks with clear dependency or rejection reasons), ENVIRONMENT (Supabase/Anthropic/Stripe connection status). ACTIVE WORKTREES must report the count actually found by `git worktree list` (zero is a valid answer). Review scores must be real data from roadmap-progress.json, not fabricated. Should NOT invent build states, test results, or scores that don't exist on disk.",
       "files": []
     },
     {
