@@ -526,10 +526,13 @@ A judge with no memory of round one surfaces fresh nitpicks each pass and burns 
 A task is merged only after **APPROVED** (machine gate PASS and judge APPROVED), never on worker completion alone. Merge from the assembly worktree, in dependency order, same message format as before:
 
 ```bash
-git -C .claude/worktrees/assembly-<slug> merge build/tNN-description --no-ff -m "feat(tNN): description [R-001,R-004] — gate PASS, judge APPROVED"
-(cd .claude/worktrees/assembly-<slug> && BUILD_STATE_DIR="$STATE" "$GATE" --integration)
-git worktree remove .claude/worktrees/tNN-description && git branch -D build/tNN-description   # -D: tip is in assembly
+git -C .claude/worktrees/assembly-<slug> merge build/tNN-description --no-ff -m "feat(tNN): description [R-001,R-004] — gate PASS, judge APPROVED" \
+  && (cd .claude/worktrees/assembly-<slug> && BUILD_STATE_DIR="$STATE" "$GATE" --integration) \
+  && git worktree remove .claude/worktrees/tNN-description \
+  && git branch -D build/tNN-description   # -D: tip is in assembly
 ```
+
+The `&&` chain is deliberate: a conflicted merge or a regressed integration gate stops the chain and leaves the task worktree and branch intact for the recovery paths below (conflict → resolver; gate regression → scoped fix loop, else revert).
 
 - On conflict, dispatch the conflict-resolution subagent (sonnet, opus on second failure), scoped to the conflict only.
 - If the `--integration` gate regresses against baseline after a merge, run a scoped fix loop on that task before merging or dispatching anything else; dependents stay waiting. If it cannot be fixed, `git revert -m 1` the merge on the assembly branch and treat the task as BLOCKED.

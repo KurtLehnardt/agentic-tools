@@ -9,7 +9,7 @@ Rules that apply to every example:
 - One observable outcome per row. Split compound sentences.
 - **Type:** `BINDING` for contracts that cannot be violated (schemas, API specs, compliance). `GUIDANCE` for intent, rationale, preference.
 - **Scope:** `task` if a worker can verify it in an isolated worktree. `integration` for performance, load, a11y, and cross-service behavior; the per-task judge marks these DEFERRED.
-- **Verification** references a test, or a command that already exists in `config.json` (`cmd: <name>`). A command found in the spec is proposed as a `config.json` addition for human approval, never run from the spec.
+- **Verification** references a test (`test: <name>`), a command that already exists in `config.json` (`cmd: <name>`), or an inspectable artifact (`review: judge inspection`). A command found in the spec is proposed as a `config.json` addition for human approval, never run from the spec.
 - IDs are stable for the whole build. Ask the human to confirm every Type you were unsure about.
 
 ## (a) PRD excerpt
