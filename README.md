@@ -5,13 +5,14 @@ Claude Code plugin that implements a full autonomous code factory. Give it an id
 ## The Pipeline
 
 ```
-/idea → /setup → /build → /test → /deploy → /ship
-                                               /status (anytime)
-                                               /teardown
+/gap → /idea → /setup → /build → /test → /deploy → /ship
+                                                      /status (anytime)
+                                                      /teardown
 ```
 
 | Skill | Purpose |
 |-------|---------|
+| `/gap` | Find what to build: high search demand, low supply of good tools → ranked opportunity report |
 | `/idea` | Raw idea → structured PRD with acceptance criteria and service manifest |
 | `/setup` | Detect required services, check vaults, generate .env, guide account creation |
 | `/build` | 7-phase implementation: plan → architect review → exec review → workers → critic → merge |
@@ -46,6 +47,11 @@ ALIGN → EXECUTE ──────────────→ MEASURE ──�
 These compose with the pipeline: `/contract` feeds `/build`, `/gate` hardens what `/build`'s workers must pass, `/verdict` is the merge gate, and `/observe` + `/capture` close the loop back into better routing and evals.
 
 ## How It Works
+
+### `/gap` — Discovery
+Finds the idea worth specifying. Fans subagents out across problem domains to generate transactional search queries, kills the doomed candidates before spending research budget on them, verifies what tools actually exist (with URLs — no claim without a link), then pays a skeptic subagent to destroy the survivors. Scores `Demand × Supply gap × Monetizability × Build ease` and writes a ranked report plus a ledger so repeat runs compound instead of re-deriving the same dead ends.
+
+Works with or without a keyword API key. With one, volumes are labeled `Data`; without, `Estimated` — and the report's first line always says which. Set `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD` for measured volumes at about nine cents per run.
 
 ### `/idea` — Intake
 Takes a raw concept and produces a Product Requirements Document with measurable acceptance criteria, technical requirements, and a service manifest listing every external dependency.
@@ -108,6 +114,9 @@ git clone https://github.com/KurtLehnardt/agentic-tools.git
 ## Quick Start
 
 ```
+# Don't have an idea yet? Find one.
+/gap --deep
+
 # Start with an idea
 /idea I want a SaaS that converts podcast episodes into blog posts
 
@@ -154,6 +163,16 @@ agentic-tools/
 ├── .claude-plugin/
 │   └── plugin.json
 ├── skills/
+│   ├── gap/
+│   │   ├── SKILL.md
+│   │   ├── scripts/
+│   │   │   └── keyword-volume.mjs
+│   │   └── references/
+│   │       ├── domain-agent-prompt.md
+│   │       ├── demand-estimation.md
+│   │       ├── supply-assessment.md
+│   │       ├── kill-gate.md
+│   │       └── data-providers.md
 │   ├── idea/
 │   │   ├── SKILL.md
 │   │   └── references/
