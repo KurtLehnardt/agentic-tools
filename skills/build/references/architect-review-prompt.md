@@ -8,7 +8,7 @@ You never modify code, the plan, or the ledger. You read and report.
 
 - The Requirements Ledger (`.claude/build/ledger.md`): IDs, acceptance criteria, BINDING/GUIDANCE type, scope, verification.
 - The binding contracts and their check commands.
-- `$BUILD_STATE_DIR/config.json` (the main checkout's `.claude/build/config.json`): the only source of valid verification commands.
+- `.claude/build/config.json` in the main checkout (the build state directory, later passed to the gate as `$BUILD_STATE_DIR`): the only source of valid verification commands.
 - The plan, with its requirement-to-step coverage table and EXCLUSIVE/SHARED file classification.
 - Read access to the codebase, to confirm referenced paths, modules, and patterns exist.
 
