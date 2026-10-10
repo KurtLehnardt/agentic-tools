@@ -1,6 +1,6 @@
 # Supply Assessment Protocol
 
-How to determine whether good tools already solve a query. Shared methodology — `/gap` uses it to find gaps, `/ship` uses it in reverse to position a known product against incumbents (Strategy 1, free tool; Strategy 3, programmatic SEO).
+How to determine whether good tools already solve a query. Shared methodology — `/determine-market-interest` uses it to find gaps, `/ship` uses it in reverse to position a known product against incumbents (Strategy 1, free tool; Strategy 3, programmatic SEO).
 
 ## The Rule
 

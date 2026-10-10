@@ -5,14 +5,14 @@ Claude Code plugin that implements a full autonomous code factory. Give it an id
 ## The Pipeline
 
 ```
-/gap → /idea → /setup → /build → /test → /deploy → /ship
-                                                      /status (anytime)
-                                                      /teardown
+/determine-market-interest → /idea → /setup → /build → /test → /deploy → /ship
+                                                                            /status (anytime)
+                                                                            /teardown
 ```
 
 | Skill | Purpose |
 |-------|---------|
-| `/gap` | Find what to build: high search demand, low supply of good tools → ranked opportunity report |
+| `/determine-market-interest` | Is there a market? Discover opportunities (high demand, low supply) or validate one idea you already have |
 | `/idea` | Raw idea → structured PRD with acceptance criteria and service manifest |
 | `/setup` | Detect required services, check vaults, generate .env, guide account creation |
 | `/build` | 7-phase implementation: plan → architect review → exec review → workers → critic → merge |
@@ -48,8 +48,22 @@ These compose with the pipeline: `/contract` feeds `/build`, `/gate` hardens wha
 
 ## How It Works
 
-### `/gap` — Discovery
-Finds the idea worth specifying. Fans subagents out across problem domains to generate transactional search queries, kills the doomed candidates before spending research budget on them, verifies what tools actually exist (with URLs — no claim without a link), then pays a skeptic subagent to destroy the survivors. Scores `Demand × Supply gap × Monetizability × Build ease` and writes a ranked report plus a ledger so repeat runs compound instead of re-deriving the same dead ends.
+### `/determine-market-interest` — Market Validation
+Answers whether anyone actually wants the thing, in two modes.
+
+**Discovery** — you don't know what to build. Fans subagents out across problem domains to generate transactional search queries, kills the doomed candidates before spending research budget on them, verifies what tools actually exist (with URLs — no claim without a link), then pays a skeptic subagent to destroy the survivors. Returns a ranked shortlist.
+
+```
+/determine-market-interest --deep
+```
+
+**Validation** — you have an idea and want a verdict. Derives the queries real users would type (not your framing of the solution), then runs the same gate, supply verification, scoring, and skeptic pass against that one idea. Returns **BUILD**, **NARROW**, **PIVOT**, or **DON'T BUILD**, with the condition that would reverse it.
+
+```
+/determine-market-interest "an app that tracks kids' chores and pays allowance automatically"
+```
+
+Scores `Demand × Supply gap × Monetizability × Build ease` and appends to a ledger, so repeat runs compound instead of re-deriving the same dead ends.
 
 Works with or without a keyword API key. With one, volumes are labeled `Data`; without, `Estimated` — and the report's first line always says which. Set `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD` for measured volumes at about nine cents per run.
 
@@ -115,7 +129,10 @@ git clone https://github.com/KurtLehnardt/agentic-tools.git
 
 ```
 # Don't have an idea yet? Find one.
-/gap --deep
+/determine-market-interest --deep
+
+# Already have one? Get a verdict.
+/determine-market-interest "my idea in a sentence"
 
 # Start with an idea
 /idea I want a SaaS that converts podcast episodes into blog posts
@@ -163,7 +180,7 @@ agentic-tools/
 ├── .claude-plugin/
 │   └── plugin.json
 ├── skills/
-│   ├── gap/
+│   ├── determine-market-interest/
 │   │   ├── SKILL.md
 │   │   ├── scripts/
 │   │   │   └── keyword-volume.mjs

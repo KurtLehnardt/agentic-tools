@@ -22,7 +22,7 @@ Every volume figure in every artifact carries exactly one label. No exceptions, 
 A provider is configured. Run the script, use `search_volume` or equivalent, label `Data`.
 
 ```bash
-node skills/gap/scripts/keyword-volume.mjs --queries survivors.txt --json > volumes.json
+node skills/determine-market-interest/scripts/keyword-volume.mjs --queries survivors.txt --json > volumes.json
 ```
 
 DataForSEO returns an absolute 12-month `monthly_searches` history, so trend direction is computed, not inferred. Prefer it when available.

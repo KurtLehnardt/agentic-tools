@@ -138,7 +138,7 @@ COST NOTES
   csv         Free.
 
 CACHE
-  ~/.cache/gap/volumes.json, keyed "provider|country|query".
+  ~/.cache/market-interest/volumes.json, keyed "provider|country|query".
   TTL 30 days for semrush (hard limit, licensing — see the comment in the source),
   90 days for every other provider. CSV results are not cached. Only rows with
   confidence "Data" are cached, so a NoData answer is always retried next run.
@@ -403,10 +403,10 @@ function readQueries(src) {
 }
 
 /* =========================================================================
- * Cache — ~/.cache/gap/volumes.json
+ * Cache — ~/.cache/market-interest/volumes.json
  * ========================================================================= */
 
-const CACHE_DIR = path.join(os.homedir(), '.cache', 'gap');
+const CACHE_DIR = path.join(os.homedir(), '.cache', 'market-interest');
 const CACHE_FILE = path.join(CACHE_DIR, 'volumes.json');
 
 /**

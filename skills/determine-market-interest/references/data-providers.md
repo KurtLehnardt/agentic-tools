@@ -1,13 +1,13 @@
 # Keyword Data Providers — Setup and Costs
 
-`/gap` runs with or without a provider. Without one, every volume figure is labeled `Estimated` and the report says so in its first line. With one, figures are labeled `Data`.
+`/determine-market-interest` runs with or without a provider. Without one, every volume figure is labeled `Estimated` and the report says so in its first line. With one, figures are labeled `Data`.
 
 All specs below were verified against official vendor documentation on 2026-10-07. Where a field could not be verified first-hand, it is marked and the script handles it defensively rather than assuming.
 
 Check what is configured at any time, free:
 
 ```bash
-node skills/gap/scripts/keyword-volume.mjs --check-keys
+node skills/determine-market-interest/scripts/keyword-volume.mjs --check-keys
 ```
 
 This runs only zero-cost quota probes. It never spends credits.
@@ -97,7 +97,7 @@ Docs: https://docs.ahrefs.com/en/api/reference/keywords-explorer/get-overview
 The zero-cost path to `Data`-labeled figures. Export from Keyword Planner, Ahrefs, or Semrush in the browser and pass the file:
 
 ```bash
-/gap --keywords ~/Downloads/keyword-export.csv
+/determine-market-interest --keywords ~/Downloads/keyword-export.csv
 ```
 
 The script auto-detects the column layout of all three vendors' standard exports. Note the export's date — keyword exports age, and a six-month-old export is not current demand.
@@ -106,7 +106,7 @@ The script auto-detects the column layout of all three vendors' standard exports
 
 ## No Provider At All
 
-`/gap` still runs end to end. Every volume figure is labeled `Estimated` or `Rough guess`, the report's first line states the data mode, and the methods note explains that ordinal ranking is more trustworthy than absolute figures.
+`/determine-market-interest` still runs end to end. Every volume figure is labeled `Estimated` or `Rough guess`, the report's first line states the data mode, and the methods note explains that ordinal ranking is more trustworthy than absolute figures.
 
 This is a supported mode, not a degraded failure. The honest version of an estimate is genuinely useful for ranking opportunities against each other. What is not acceptable is an estimate presented as measurement, which is why the labeling law in `demand-estimation.md` is absolute.
 
