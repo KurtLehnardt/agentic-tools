@@ -30,7 +30,7 @@ The guards below stand on their own if you'd rather hand-roll them; the library 
 
 ## Phase 1: WRAP THE LOOP
 
-Identify the loop to harden (a `/build` ralph-worker, a local-model agent, an MCP tool loop). Insert the five guards around its `call model → run tool → append` cycle. The core loop shape stays:
+Identify the loop to harden (a `/build` worker, a local-model agent, an MCP tool loop). Insert the five guards around its `call model → run tool → append` cycle. The core loop shape stays:
 
 ```
 build context (compacted) → validate proposed action → rescue if near-miss
@@ -54,7 +54,7 @@ Report, one line:
 ## Handoff
 
 - **`/route`** — decides which model runs inside the survivable loop and when to escalate.
-- **`/build`** — the ralph-worker loop is a natural place to install these guards.
+- **`/build`** — the worker loop is a natural place to install these guards.
 - **`/observe`** — spans reveal which guard fires most, i.e. where the loop is fragile.
 
 > Verified Aug 2026: `forge-guardrails` is real ([antoinezambelli/forge](https://github.com/antoinezambelli/forge), results presented at CAIS 2026). Its exact terms: *response validation*, *rescue parsing*, *retry loop with error tracking*, *prerequisite enforcement & step-ordering* (multi-turn only), and *context compaction* (`ContextManager`, e.g. `TieredCompact`). Benchmark numbers are version-specific (v0.7.0 above) — re-check the repo, and pin the version.
