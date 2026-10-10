@@ -553,7 +553,7 @@ Per-task judges verified tasks in isolation, and every `scope: integration` requ
 (cd .claude/worktrees/assembly-<slug> && BUILD_STATE_DIR="$STATE" "$GATE" --integration)
 ```
 
-Then dispatch a final judge (opus, the integration-judge variant in `references/judge-review-prompt.md`) over the **full ledger** on the assembly branch, running every verification method including the deferred ones (perf, a11y, cross-service). It must return a verdict covering every requirement ID with no DEFERRED remaining. Write it to `.claude/build/final-verdict.json`.
+Then dispatch a final judge (opus, the integration-judge variant in `references/judge-review-prompt.md`) over the **full ledger** on the assembly branch, running every verification method including the deferred ones (perf, a11y, cross-service). It must return a verdict covering every requirement ID with no DEFERRED remaining. Write it to `$STATE/final-verdict.json` (the main checkout's build state dir, not the assembly worktree); pass that absolute path to the judge.
 
 ### Deliver
 

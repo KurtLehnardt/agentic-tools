@@ -94,7 +94,7 @@ Same rules, wider input. Dispatched once, on the assembly branch, after `"$GATE"
 - **DEFERRED is not allowed.** Every requirement ID gets MET or NOT_MET. A requirement you cannot verify is NOT_MET with the reason as evidence.
 - A red integration machine report is a FAIL you cannot overturn, except checks listed as known failing at baseline in `baseline.json`.
 - Output the same `|||JUDGE_VERDICT|||` shape with `"task_id": "integration"`, `requirements` covering the full ledger, and no DEFERRED entries.
-- **Write the verdict to `.claude/build/final-verdict.json`** (the JSON between the markers). You may write this file only; you still modify no code.
+- **Write the verdict to `$BUILD_STATE_DIR/final-verdict.json`** (the absolute path the orchestrator gives you, not a path relative to the assembly worktree) (the JSON between the markers). You may write this file only; you still modify no code.
 
 ## Tone
 
