@@ -23,7 +23,7 @@ Read these in parallel to build the dashboard:
 
 ### 1. Git State
 ```bash
-git branch -a                    # All branches including build/* and ralph/*
+git branch -a                    # All branches including build/* and other work branches
 git worktree list                # Active worktrees
 git log --oneline -20            # Recent commits
 git stash list                   # Stashed work

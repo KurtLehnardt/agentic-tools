@@ -10,14 +10,25 @@
 # Project-agnostic: every command it runs comes from .claude/build/config.json.
 # Requires: bash, git, python3. No jq, no node, no network.
 #
+# Build state directory: $BUILD_STATE_DIR (absolute path) if set, else
+# <repo root>/.claude/build. Worktrees do not contain the untracked build state, so
+# the orchestrator passes the main checkout's absolute .claude/build path to every
+# worker; commands still run in, and the diff is still taken from, the worktree.
+#
+# Optional $BUILD_DIFF_BASE (a commit/ref): the scope diff and the test-tampering
+# comparison are taken against it instead of base_ref (merge-base for scope). Used
+# when a task branch starts from the assembly branch, which already holds its
+# dependencies' merged work, so those files are not counted as this task's changes
+# and the dependencies' tests are protected from tampering too.
+#
 # Usage:
 #   scripts/gate-check.sh <TASK_ID>       Per-task gate.
-#                                         Reads  .claude/build/tasks/<TASK_ID>.json
-#                                         Writes .claude/build/gate/<TASK_ID>.json
+#                                         Reads  $STATE/tasks/<TASK_ID>.json
+#                                         Writes $STATE/gate/<TASK_ID>.json
 #
 #   scripts/gate-check.sh --integration   Whole-branch gate (also used to capture
 #                                         the baseline in Phase 4.5).
-#                                         Writes .claude/build/gate/integration.json
+#                                         Writes $STATE/gate/integration.json
 #
 # Per-task checks:
 #   1. validation suite   — every config.validation[].cmd
@@ -51,7 +62,11 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   echo "gate-check.sh: not inside a git repository" >&2; exit 2; }
 cd "$REPO_ROOT"
 
-BUILD_DIR=".claude/build"
+BUILD_DIR="${BUILD_STATE_DIR:-.claude/build}"
+case "$BUILD_DIR" in
+  /*) ;;
+  *) [ -n "${BUILD_STATE_DIR:-}" ] && { echo "gate-check.sh: BUILD_STATE_DIR must be an absolute path" >&2; exit 2; } ;;
+esac
 CONFIG="$BUILD_DIR/config.json"
 [ -f "$CONFIG" ] || { echo "gate-check.sh: missing $CONFIG (run Phase 0 first)" >&2; exit 2; }
 if [ "$MODE" = "task" ]; then
@@ -61,12 +76,12 @@ fi
 
 # Everything mechanical happens in python3 (subprocess for commands + git, stdlib
 # for JSON and glob matching). Bash is only the entry point.
-MODE="$MODE" TASK_ID="$TASK_ID" python3 - <<'PY'
+MODE="$MODE" TASK_ID="$TASK_ID" BUILD_DIR="$BUILD_DIR" DIFF_BASE="${BUILD_DIFF_BASE:-}" python3 - <<'PY'
 import json, os, re, subprocess, sys, time
 
 MODE      = os.environ["MODE"]
 TASK_ID   = os.environ["TASK_ID"]
-BUILD_DIR = ".claude/build"
+BUILD_DIR = os.environ["BUILD_DIR"]
 GATE_DIR  = os.path.join(BUILD_DIR, "gate")
 BASELINE  = os.path.join(BUILD_DIR, "baseline.json")
 
@@ -188,6 +203,12 @@ if rc != 0:
     sys.exit(2)
 rc, mb, _ = git("merge-base", base_ref, "HEAD")
 diff_base = mb.strip() if rc == 0 and mb.strip() else base_ref
+if os.environ.get("DIFF_BASE"):
+    rc, _, _ = git("rev-parse", "--verify", "--quiet", os.environ["DIFF_BASE"] + "^{commit}")
+    if rc != 0:
+        print(f"gate-check.sh: BUILD_DIFF_BASE '{os.environ['DIFF_BASE']}' does not resolve", file=sys.stderr)
+        sys.exit(2)
+    diff_base = os.environ["DIFF_BASE"]
 
 # ---- 3: scope diff -----------------------------------------------------------
 # Committed changes since divergence, plus anything still in the working tree
@@ -231,13 +252,16 @@ SKIP_RES = [
 def count(text, regexes):
     return sum(len(rx.findall(text)) for rx in regexes)
 
-rc, base_files_out, _ = git("ls-tree", "-r", "--name-only", base_ref)
+# With BUILD_DIFF_BASE, compare against it so tests merged in by dependencies are
+# protected as well; otherwise against base_ref (unchanged default).
+tamper_ref = os.environ.get("DIFF_BASE") or base_ref
+rc, base_files_out, _ = git("ls-tree", "-r", "--name-only", tamper_ref)
 base_files = base_files_out.splitlines() if rc == 0 else []
 base_test_files = [f for f in base_files if match_any(f, test_globs)]
 
 tamper = []
 for f in base_test_files:
-    rc, base_content, _ = git("show", f"{base_ref}:{f}")
+    rc, base_content, _ = git("show", f"{tamper_ref}:{f}")
     if rc != 0:
         continue
     if not os.path.exists(f):
