@@ -15,7 +15,7 @@ All verdicts are binary. There are no scores and no thresholds.
 
 ## Process
 
-1. Read the machine report. If `machine_verdict` is not PASS, stop: you should not have been dispatched. Report it and do not judge.
+1. Read the machine report. If `machine_verdict` is not PASS, stop: you should not have been dispatched. Do not judge. Emit a `|||JUDGE_VERDICT|||` block with `task_id`, `cycle`, `worker_model`, and `judge_model` filled in as usual, `"verdict": "REVISE"`, `machine_gate` set to the report's verdict and path, empty `requirements`, `definition_of_done`, and `advisory_notes`, and exactly one blocking issue: `machine gate [verdict] — see [report path]`. The orchestrator treats this as a machine-gate failure: it goes straight back to the worker and is not counted as a judge cycle.
 2. Read the diff against the task's diff base (`BUILD_DIFF_BASE` if provided, else the `base_ref` in config.json). Read every changed line.
 3. For each requirement, locate the implementing code and the test that exercises it. Decide MET or NOT_MET on the criterion's intent, not just on a green test. Does the assertion check the stated outcome, or only that something was returned?
 4. Walk the Definition of Done line by line.
@@ -44,7 +44,7 @@ If you believe a requirement is wrong, contradictory, or impossible, do not gues
   "cycle": 1,
   "worker_model": "opus",
   "judge_model": "opus",
-  "machine_gate": {"verdict": "PASS", "report": ".claude/build/gate/t03.json"},
+  "machine_gate": {"verdict": "PASS", "report": "$BUILD_STATE_DIR/gate/t03.json"},
   "verdict": "APPROVED" | "REVISE" | "BLOCKED",
   "requirements": [
     {"id":"R-001","status":"MET","evidence":"gate report validation.tests exit 0; assertion at tests/auth/token.spec.ts:14 checks the 401 code, not just status"},
@@ -60,7 +60,7 @@ If you believe a requirement is wrong, contradictory, or impossible, do not gues
 |||END_JUDGE_VERDICT|||
 ```
 
-Every ledger row assigned to the task appears in `requirements`. Every DoD line appears in `definition_of_done`.
+Every ledger row assigned to the task appears in `requirements`. Every DoD line appears in `definition_of_done`. The only exception is the machine-gate-not-PASS block in Process step 1, where both are empty.
 
 ## Verdict Logic
 

@@ -487,7 +487,7 @@ Judge rules:
   "cycle": 1,
   "worker_model": "opus",
   "judge_model": "opus",
-  "machine_gate": {"verdict": "PASS", "report": ".claude/build/gate/t03.json"},
+  "machine_gate": {"verdict": "PASS", "report": "$BUILD_STATE_DIR/gate/t03.json"},
   "verdict": "APPROVED" | "REVISE" | "BLOCKED",
   "requirements": [
     {"id":"R-001","status":"MET","evidence":"gate report validation.tests exit 0; assertion at tests/auth/token.spec.ts:14 checks the 401 code, not just status"},
@@ -588,7 +588,7 @@ Report which requirement regressed, which merge introduced it, and the rollback 
 | `SPEC_CONFLICT` from any agent | Stop that task, escalate, amend the ledger (with approval), re-dispatch. Never resolve by guessing. |
 | Worker reports `BLOCKED: turn budget exhausted` (or returns with no status line), first time | Promote one tier, re-dispatch with remaining steps and +50% turns. |
 | Worker stalls again after promotion | **Return to Phase 4 and re-decompose.** A second stall usually means a badly scoped task or an ambiguous step, not insufficient model. Throwing a bigger model at a bad brief just costs more to fail. |
-| Machine gate fails | Straight back to the worker — no judge dispatch, no cycle counted against the judge limit. |
+| Machine gate fails | Straight back to the worker — no judge dispatch, no cycle counted against the judge limit. A judge dispatched in error returns REVISE with a single `machine gate ...` blocking issue; handle it the same way. |
 | Judge verdict malformed or evidence-free | Re-dispatch judge (max 2), then escalate. |
 | Judge REVISEs 5× | Report full verdict history — shows whether it's one stubborn requirement or a moving target. |
 | Opus tier unavailable | HALT before the gate. Never downgrade a judge. |
