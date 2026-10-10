@@ -9,7 +9,7 @@ PASS if:
 - Negative path assertion (a): adding product with invalid product ID returns an error
 - Negative path assertion (b): attempting to set or permit total < 0 fails
 - Negative path assertion (c): empty cart returns exactly 0
-- The reply presents the code of a hollow stub that hardcodes total=45 and skips validation, and identifies, by name, the specific assertion that rejects it (e.g., the InvalidProductID test), showing the reasoning for why that assertion catches it
+- The reply presents the code of a hollow stub that hardcodes total=45 and skips validation, and identifies, by name, the specific assertion that rejects it (e.g., the InvalidProductID test), showing the reasoning for why that assertion catches it. Alternatively, building a stub-proving mode into the gate itself (e.g. a `--prove-stubs` flag) and naming the assertions that mode relies on is equally sufficient.
 - Uses concrete numeric equality rather than adjectives like 'correct'
 - The reasoning shown demonstrates the stub fails specifically on a negative-path assertion, not the positive-path one
 
@@ -20,5 +20,5 @@ FAIL if:
 - Does not test prevention of negative totals
 - Does not test empty cart returns exactly 0
 - A stub hardcoding total=45 would pass the gate as shown
-- Does not present the stub's code, or does not name, by name, the specific assertion that rejects it, or omits the reasoning
+- Neither presents the stub's code with the named assertion that rejects it and the reasoning, nor provides a stub-proving mode naming the assertions it relies on
 - Relies on adjectives like 'correct' instead of concrete numeric values

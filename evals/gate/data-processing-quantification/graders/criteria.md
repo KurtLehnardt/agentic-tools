@@ -3,27 +3,25 @@ type: llm
 weight: 1
 ---
 
-<!-- Doctrine 6 choice: option (a). This is a gate-building skill whose job is to
-     produce an artifact, and the prompt is a single turn with no chance for the user
-     to reply. The correct behavior is therefore NOT pushback alone — it is pushback
-     PLUS a provisional gate whose unquantified thresholds are explicit, clearly-marked
-     placeholders pending the user's numbers. A rubric that demanded pushback-and-stop
-     AND a final, non-placeholder gate in the same turn was structurally unsatisfiable
-     and is why this case scored 1.00 without the skill ever firing. -->
+<!-- Doctrine 6 choice: option (b), pushback alone passes.
+     Option (a) was tried first and failed a real run. Evidence: given three
+     unquantifiable requirements the skill replied "I couldn't build this gate yet,
+     so the reply has no gate code or run command", and tabulated why each requirement
+     cannot fail as written. That is SKILL.md-correct -- gating an unfalsifiable
+     criterion produces a gate a stub passes, which the skill is built to refuse.
+     Demanding a provisional gate in the same turn asked for something the skill
+     deliberately does not do. This rubric now grades the refusal and its reasoning. -->
 
 PASS if:
-- Identifies 'performant', 'handle edge cases', and 'production data' as unquantified and too vague
-- Objects to the vagueness, explicitly asking the user to supply specific, quantified numbers (e.g., a latency target, a list of edge-case inputs, a definition of valid production data)
-- In the same reply, presents a provisional gate rather than refusing to produce anything, with every unquantified threshold marked as an explicit placeholder (e.g., 'PLACEHOLDER: <500ms — pending user-supplied latency target')
-- The provisional gate's latency bound is clearly labeled as a placeholder, not asserted as a final, authoritative number
-- The provisional gate asserts named edge-case inputs (empty, null, boundary values) even where the exact data patterns remain placeholders
-- Presents the code of a hollow stub (hardcoded return value) and identifies, by name, the specific assertion that rejects it, showing the reasoning for why that assertion catches it
-- States that the gate still refuses to treat 'performant' or 'elegant' as testable without the user's quantification, even in its provisional form
+- Identifies 'performant', 'handle edge cases', and 'production data' as unquantified and too vague to gate
+- Explains, per requirement, why it cannot fail as written -- a criterion with no threshold cannot reject anything, so a gate built on it would pass a hollow stub
+- Asks the user for the specific missing values: a latency or throughput target, a named list of edge-case inputs with their expected outputs, and a definition of valid production data
+- Declines to emit a final gate for the unquantified requirements rather than guessing thresholds
+- If any requirement IS quantifiable as given, gates that one and says which it gated
 
 FAIL if:
-- Produces a final (non-placeholder) gate based on vague criteria without first demanding quantification
-- Produces only pushback with no provisional gate, or only a gate with no pushback
-- Asserts a latency bound, edge-case list, or production-data definition as final/authoritative rather than marking it an explicit placeholder
-- Presents a provisional gate whose placeholder thresholds are not clearly labeled as placeholders
-- Does not present the hollow stub's code or does not name, by name, the specific assertion that rejects it
-- Allows assertions that a hardcoded-return stub could pass
+- Emits a gate asserting invented thresholds as if the user had supplied them
+- Treats 'performant' or 'handle edge cases' as gateable without demanding numbers
+- Refuses without explaining why the requirements cannot fail as written
+- Asks for no specific values, leaving the user to guess what is needed
+- Claims to have run or saved anything
