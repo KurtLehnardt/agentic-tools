@@ -10,6 +10,7 @@ PASS if:
 - Uses fake Stripe event objects in tests
 - Tests success paths, API failures, and webhook signature failures
 - Test file follows Arrange-Act-Assert structure
+- The reply includes the complete generated test file content inline (not merely a description of what the tests would contain), and that code visibly implements the listed scenarios
 - Phase 4 states the validation command it would run and that generated tests must pass before reporting, without claiming a run it did not perform
 
 FAIL if:
@@ -18,5 +19,6 @@ FAIL if:
 - Does not mock Stripe API properly (missing vi.mock or equivalent)
 - Fails to test the three specified edge cases (duplicate webhook IDs, expired signatures, Postgres connection failure)
 - Does not test success paths, API failures, and webhook signature failures
-- Modifies stripe.ts implementation file instead of creating tests
+- Describes test scenarios without including the actual test code in the reply
+- States or shows that it edited stripe.ts implementation instead of only creating tests
 - Phase 4 claims to have actually run tests or executed the validation command

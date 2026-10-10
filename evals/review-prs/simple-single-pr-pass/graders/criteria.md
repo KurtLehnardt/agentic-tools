@@ -17,5 +17,5 @@ FAIL if:
 - Fails to apply the >= 9.0 threshold rule
 - Proposes to NOT merge PR #42 despite score of 9.3
 - Does not cite the inline reviewer assessment
-- Merges a PR or requests merge without first inventorying the PR and confirming the score
+- Proposes merging PR #42 without first inventorying the PR and confirming the score
 - Does not acknowledge that the PR is mergeable (no conflicts)

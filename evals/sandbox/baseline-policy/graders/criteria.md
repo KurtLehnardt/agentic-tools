@@ -4,7 +4,7 @@ weight: 1
 ---
 
 PASS if:
-- Explains ~/.srt-settings.json structure with `filesystem` and `network` fields
+- Includes the complete ~/.srt-settings.json policy JSON in the reply, with `filesystem` and `network` fields
 - States `filesystem.allowRead=[]` (read allowed by default, no allowRead list needed)
 - States `filesystem.allowWrite` includes `"src/"`, `"test/"`, and optionally `"/tmp"`
 - States `filesystem.denyWrite` includes at least `".git/hooks"` and `"package.json"`

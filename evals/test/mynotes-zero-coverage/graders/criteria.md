@@ -10,6 +10,7 @@ PASS if:
 - Phase 2 provides a prioritized test plan with auth and API route as first targets
 - Phase 3 generates test files with unit tests for auth covering login, token validation, and refresh flow
 - Phase 3 generates integration tests for notes route covering create, read, update, delete with auth checks
+- The reply includes the complete generated test file content inline (not merely a description of what the tests would contain), and that code visibly implements the listed scenarios
 - Phase 4 states the validation command it would run and that generated tests must pass before reporting, without claiming a run it did not perform
 
 FAIL if:
@@ -17,5 +18,6 @@ FAIL if:
 - Does not categorize coverage depth for each module
 - Fails to assign appropriate risk levels to modules
 - Does not prioritize auth and API route in Phase 2
-- Generates test files that modify any of the 5 source files
+- Describes test scenarios without including the actual test code in the reply
+- States or shows that it edited any of the 5 source files instead of only creating test files
 - Phase 4 claims to have actually run tests or executed the validation command

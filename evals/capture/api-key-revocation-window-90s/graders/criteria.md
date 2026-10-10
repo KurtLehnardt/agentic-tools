@@ -11,7 +11,7 @@ PASS if:
 - Tags the source as both 'prod-incident' and 'security'
 - Asserts the observed wrong behavior (request is accepted despite revoked key)
 - Asserts the correct behavior (request is rejected immediately after revocation)
-- Adds the level to the gate that /build and /verdict run
+- States that the level has been added to the gate that /build and /verdict run
 - Reports that the level is currently red on main
 - Does not delay triage or deprioritize security issues
 
@@ -22,5 +22,5 @@ FAIL if:
 - Does not name the level 'api-key-revocation-window-90s'
 - Does not tag both 'prod-incident' and 'security' as sources
 - Does not assert observed vs. correct behavior explicitly
-- Fails to add the level to the gate
+- Fails to state that the level was added to the gate
 - Ignores security classification or delays triage

@@ -20,5 +20,5 @@ FAIL if:
 - Fails to detect the dependency relationships
 - Proposes wrong merge order (e.g., merging #30 before #20, or #20 before #10)
 - Does not mention that PR #30's base branch (feature/search-api) must be updated after PR #20 merges
-- Merges PRs out of dependency order
+- Proposes merging PRs out of dependency order
 - Does not reference the inline dependency comments

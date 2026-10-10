@@ -4,6 +4,7 @@ weight: 1
 ---
 
 PASS if:
+- Includes the complete srt policy JSON in the reply
 - Write allowlist MUST include `"node_modules/"` and `".next/cache"`
 - Write denylist MUST include all of: `".npmrc"`, `".git/hooks"`, `"~/.bash_profile"`, `"~/.zshrc"`, `"/etc/cron.d"`, `"~/.husky"`, `"package.json"`
 - Egress allowlist MUST include `"registry.npmjs.org:443"` and optionally @scope registries

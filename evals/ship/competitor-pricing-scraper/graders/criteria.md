@@ -5,14 +5,13 @@ weight: 1
 
 PASS if:
 - Phase 1 names automated competitor scraping as the core mechanic
-- Phase 1 explicitly logs "confirm scraping compliance / prefer official APIs where available" under Open Questions for User in questions.md
-- Phase 3 produces prioritized 8-strategy document
+- The reply states or shows the open question "confirm scraping compliance / prefer official APIs where available" (as a logged Open Question for User, in questions.md content or inline in the reply)
+- Phase 3 produces a prioritized 8-strategy document in the reply
 - Acknowledges compliance and regulatory considerations
 
 FAIL if:
 - Phase 1 fails to name core mechanic
-- Doesn't question or log scraping compliance concerns in questions.md
-- Missing questions.md file with compliance note
-- Missing Phase 3 strategy document
+- The reply never states or shows the scraping-compliance open question
+- Phase 3 strategy document is missing from the reply
 - Recommends "just launch it and see"
 - Ignores regulatory and compliance concerns

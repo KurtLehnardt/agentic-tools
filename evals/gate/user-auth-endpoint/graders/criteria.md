@@ -4,21 +4,20 @@ weight: 1
 ---
 
 PASS if:
-- Produces a runnable test suite (Jest, pytest, or shell script per project conventions)
+- Produces a runnable test suite (Jest, pytest, or shell script per project conventions), presented in full in the reply
 - Contains at least 3 assertions covering both positive and negative paths
 - Assertion 1: valid email and password return 200 with both access_token and user_id fields present in response
 - Assertion 2: missing email parameter returns 400 or higher status code
 - Assertion 3: response does NOT contain password or secret fields
-- Demonstrates that a hollow stub (one that echoes request parameters without validation) fails the gate
-- Reports which specific assertion rejected the stub
-- Provides the exact command to re-run the gate (e.g., 'npm test auth.gate.js' or 'pytest test_auth_gate.py')
+- The reply presents the code of a hollow stub (one that echoes request parameters back without validation) and identifies, by name, the specific assertion that rejects it, showing the reasoning for why that assertion catches it (e.g., the echoed response lacks `access_token`/`user_id`, or returns 200 for a request missing `email`)
+- Provides the exact command to re-run the gate
 
 FAIL if:
-- Gate does not reject a hollow stub that echoes request parameters without validation
+- Does not present the hollow stub's code, or the stub shown would pass the gate
 - Produces fewer than 3 assertions
 - Does not test for access_token field in response
 - Does not test for user_id field in response
 - Does not test rejection of requests with missing email parameter
 - Does not assert that password or secret fields are absent from response
-- Does not report which assertion rejected the stub
+- Does not name, by name, the specific assertion that rejects the stub, or omits the reasoning for why it rejects it
 - Does not provide the exact re-run command

@@ -3,20 +3,20 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "I have 4 workers running on build/t01-database, build/t02-api, build/t03-auth, and build/t04-frontend branches. Can you check on them? Some have been running for a while.",
-      "expected_output": "Must discover all 4 build/* worktrees and report on each. Must assess progress for each by reading git history (commits, file changes, time since last commit). Must detect problem types (STALLED, SLOW, SCOPE DRIFT, REPEATED FAILURE, NO PROGRESS, BLOCKED) if applicable. Must write NUDGE.md atomically to problem workers only—not to healthy workers. Console report must use tabular format showing task ID, step progress (N/M steps), last commit time, and problem status. Should NOT modify any code files or git state. Should NOT write NUDGE.md to workers with healthy progress.",
+      "prompt": "I have 4 workers running on build/t01-database, build/t02-api, build/t03-auth, and build/t04-frontend branches. Can you check on them? Some have been running for a while. Include the complete NUDGE.md content, and the atomic write commands used to create it, for each worker you flag in your reply.",
+      "expected_output": "Must discover all 4 build/* worktrees and report on each. Must assess progress for each from commit/file-change history given. Must name problem types (STALLED, SLOW, SCOPE DRIFT, REPEATED FAILURE, NO PROGRESS, BLOCKED) where applicable. Reply must show the atomic write commands (.NUDGE.md.tmp then mv) and NUDGE.md content for problem workers only—not for healthy workers. Console report must use tabular format showing task ID, step progress (N/M steps), last commit time, and problem status. Should NOT describe modifying any code files or git state. Should NOT show NUDGE.md content or write commands for workers with healthy progress.",
       "files": []
     },
     {
       "id": 2,
-      "prompt": "can you supervise workers for me? i have a couple build branches going and want to make sure theyre making progress. its been running for a bit.",
-      "expected_output": "Must recognize 'supervise workers' as babysit trigger despite lowercase/informal tone and spacing. Must execute same discovery and assessment as Case 1. Must match worker count and progress accurately. NUDGE.md files must use atomic write pattern (write .NUDGE.md.tmp then move). Console report must show timestamp, tick count (N/24 for 2-hour limit), and problem summaries. Should NOT fail on informal input. Should NOT skip phases due to casual phrasing.",
+      "prompt": "can you supervise workers for me? i have a couple build branches going and want to make sure theyre making progress. its been running for a bit. Include the complete NUDGE.md content, and the atomic write commands used to create it, for each worker you flag in your reply.",
+      "expected_output": "Must recognize 'supervise workers' as babysit trigger despite lowercase/informal tone and spacing. Reply must include the same discovery and assessment reasoning as Case 1. Must match worker count and progress accurately. Any NUDGE.md content shown must use the atomic write pattern (.NUDGE.md.tmp then mv). Console report must show timestamp, tick count (N/24 for 2-hour limit), and problem summaries. Should NOT fail on informal input. Should NOT skip discovery/assessment reasoning due to casual phrasing.",
       "files": []
     },
     {
       "id": 3,
-      "prompt": "/babysit — check build/t01-schema-migration (12 mins idle, 3 commits total), build/t02-indexing (8 mins since last commit, 5 commits, modified src/db/indexes.ts correctly), and build/t03-triggers (20 mins idle, no commits yet, started 25 mins ago). Worker t01 is on a Medium task. Worker t02 is on a Small task. Worker t03 is on a Large task.",
-      "expected_output": "Must detect t01 as STALLED (12 mins idle, no uncommitted work). Must NOT nudge t02 (making progress, files in scope). Must detect t03 as NO PROGRESS (25 mins active, zero commits). Must write NUDGE.md for t01 and t03 with problem-specific templates (STALLED template for t01, NO PROGRESS template for t03). Must NOT write NUDGE.md for t02. Console report must show: t01 status STALLED, t02 status healthy (✓), t03 status NO PROGRESS. Should NOT confuse elapsed time with stall time.",
+      "prompt": "/babysit — check build/t01-schema-migration (12 mins idle, 3 commits total), build/t02-indexing (8 mins since last commit, 5 commits, modified src/db/indexes.ts correctly), and build/t03-triggers (20 mins idle, no commits yet, started 25 mins ago). Worker t01 is on a Medium task. Worker t02 is on a Small task. Worker t03 is on a Large task. Include the complete NUDGE.md content for each worker you flag in your reply.",
+      "expected_output": "Must detect t01 as STALLED (12 mins idle, no uncommitted work). Must NOT include NUDGE.md content for t02 (making progress, files in scope). Must detect t03 as NO PROGRESS (25 mins active, zero commits). Reply must include the complete NUDGE.md content for t01 and t03 using problem-specific templates (STALLED template for t01, NO PROGRESS template for t03). Must NOT include NUDGE.md content for t02. Console report must show: t01 status STALLED, t02 status healthy (✓), t03 status NO PROGRESS. Should NOT confuse elapsed time with stall time.",
       "files": []
     },
     {
@@ -27,14 +27,14 @@
     },
     {
       "id": 5,
-      "prompt": "babysit: build/t05-payment-processor has modified src/auth/login.ts (outside its scope—only owns src/payments/*), and build/t06-email-service made 5 commits all named 'fix(t06): step 2' without advancing to step 3. Previous check found t05 stalled, now it has uncommitted changes. Check both.",
-      "expected_output": "Must detect t05 SCOPE DRIFT (modified file outside owned list: src/auth/login.ts not in src/payments/*). Must detect t06 REPEATED FAILURE (5 commits on same step). If previous NUDGE.md exists for t05, must overwrite with new SCOPE DRIFT nudge, and console must log 'Overwrote previous STALLED nudge with SCOPE DRIFT nudge for t05'. NUDGE.md for t05 must list file-specific instruction to revert src/auth/login.ts. NUDGE.md for t06 must suggest trying different approach or requesting BLOCKED status. Should NOT assume worktree state from prior checks—must re-read git state fresh each tick.",
+      "prompt": "babysit: build/t05-payment-processor has modified src/auth/login.ts (outside its scope—only owns src/payments/*), and build/t06-email-service made 5 commits all named 'fix(t06): step 2' without advancing to step 3. Previous check found t05 stalled, now it has uncommitted changes. Check both. Include the complete NUDGE.md content for t05 and t06 in your reply.",
+      "expected_output": "Must detect t05 SCOPE DRIFT (modified file outside owned list: src/auth/login.ts not in src/payments/*). Must detect t06 REPEATED FAILURE (5 commits on same step). Must state the previous NUDGE.md for t05 is overwritten with a new SCOPE DRIFT nudge, and console must log 'Overwrote previous STALLED nudge with SCOPE DRIFT nudge for t05'. NUDGE.md content for t05 must include a file-specific instruction to revert src/auth/login.ts. NUDGE.md content for t06 must suggest trying a different approach or requesting BLOCKED status. Should NOT assume worktree state from prior checks—must base the assessment on this tick's given facts only.",
       "files": []
     },
     {
       "id": 6,
       "prompt": "babysit check: build/t01-auth-middleware has all 4 assigned steps completed (feat(t01): step 1-4 commits all present, 11 minutes ago). Last babysit tick wrote NUDGE.md to t01 for SLOW progress (was on step 2 of 4, 18 mins elapsed). build/t02-rate-limiter is in progress (2/3 steps, last commit 7 mins ago, Small task, all files in scope). A NUDGE.md exists for t01 from the previous check.",
-      "expected_output": "Must detect t01 has recovered—all 4/4 steps completed, no current problems. Must delete/remove the stale NUDGE.md from t01 (worker was nudged for SLOW, now healthy). Console report must log 'Stale nudge removed: .claude/worktrees/t01-auth-middleware/NUDGE.md (worker recovered)'. Must NOT write a new NUDGE.md for t01. Must assess t02 normally (2/3 steps, healthy pace for Small task, no nudge needed). Should NOT skip deletion because a NUDGE.md exists. Should NOT re-nudge a recovered worker.",
+      "expected_output": "Must detect t01 has recovered—all 4/4 steps completed, no current problems. Must state the stale NUDGE.md for t01 is removed (worker was nudged for SLOW, now healthy). Console report must log 'Stale nudge removed: .claude/worktrees/t01-auth-middleware/NUDGE.md (worker recovered)'. Must NOT state a new NUDGE.md is written for t01. Must assess t02 normally (2/3 steps, healthy pace for Small task, no nudge needed). Should NOT skip the deletion because a NUDGE.md exists. Should NOT describe re-nudging a recovered worker.",
       "files": []
     }
   ]

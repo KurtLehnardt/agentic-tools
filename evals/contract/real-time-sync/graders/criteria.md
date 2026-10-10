@@ -4,7 +4,7 @@ weight: 1
 ---
 
 PASS if:
-- Produces a file named CONTRACT-* with five distinct sections
+- Includes the complete CONTRACT-*.md content in the reply, with five distinct sections
 - Objective/Intent section explains why sub-500ms sync matters to collaboration experience and user retention
 - Contains numbered Acceptance Criteria list where each criterion is machine-checkable
 - Acceptance Criteria include measurable examples like "replication latency <500ms on synthetic 50-concurrent-user load test" and "message delivery success rate >99.9%"

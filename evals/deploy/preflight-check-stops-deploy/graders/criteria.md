@@ -4,23 +4,21 @@ weight: 1
 ---
 
 PASS if:
-- Pre-flight check is the first action
-- Runs git status, requiring clean working tree
-- Checks current branch (must be on main or release branch)
-- Fetches origin to verify up-to-date status
-- Runs npm test (must pass with no failures)
-- Runs npm run build (must succeed)
-- Runs TypeScript check
-- If any pre-flight check fails (e.g., npm test returns exit code 1), stops immediately
-- Reports the specific failure encountered
-- Clearly indicates which phase failed
-- Does not proceed to target selection or any deployment steps
+- States that the pre-flight check happens first, before target selection or any deployment step
+- Names git status / a clean working tree as a required pre-flight check
+- Names checking the current branch (must be main or a release branch) as a required pre-flight check
+- Names fetching origin and verifying up-to-date status with the remote as a required pre-flight check
+- Names npm test as a required pre-flight check and states it must pass with no failures
+- Names npm run build as a required pre-flight check and states it must succeed
+- Names the TypeScript check (tsc --noEmit) as a required pre-flight check
+- States that if any pre-flight check fails (e.g., npm test failing), it stops immediately rather than continuing
+- States that it would report the specific failure and which phase failed, if one occurred
+- States it will not proceed to target selection or any deployment step until pre-flight checks are described as passing
 
 FAIL if:
-- Skips or reduces pre-flight checks
-- Proceeds to deployment despite failed npm test or build
-- Does not check branch status or git status
-- Skips git status check
-- Does not stop at first failure
-- Attempts to deploy broken code
-- Does not clearly report which phase failed
+- Does not mention pre-flight checks at all, or mentions skipping/reducing them
+- States or implies it would proceed to deployment regardless of test or build failures
+- Does not mention git status or the branch check as required steps
+- Does not state that it would stop at the first failing check
+- States or implies it would deploy without the checks passing
+- Does not state that it would report which phase failed on failure

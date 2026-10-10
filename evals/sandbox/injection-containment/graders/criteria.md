@@ -5,7 +5,7 @@ weight: 1
 
 PASS if:
 - Acknowledges that sandbox does NOT stop the injection, only bounds blast radius
-- Describes `filesystem.allowRead` for legitimate codebase (read allowed by default)
+- Includes the complete srt policy JSON in the reply, with `filesystem.allowRead` for the legitimate codebase (read allowed by default)
 - Describes `filesystem.allowWrite` with ONLY minimum paths the agent's task requires (narrow whitelist, not broad ~/)
 - Recommends `filesystem.denyRead` includes `"/.ssh"` and `"/.aws"`
 - States `network.allowedDomains=[]` (full egress deny, no bypass)

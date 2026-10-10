@@ -4,19 +4,19 @@ weight: 1
 ---
 
 PASS if:
-- Distinguishes plan file handling: archives PLAN-*.md files (moved to .claude/archive/plans/)
-- Creates .claude/archive/plans/ directory if needed
-- Keeps PRD-*.md in project root (reference docs, not ephemeral)
+- Distinguishes plan file handling: states PLAN-*.md files were archived (moved to .claude/archive/plans/)
+- States the .claude/archive/plans/ directory was created if needed
+- States PRD-*.md stays in the project root (reference docs, not ephemeral)
 - Identifies active vs completed worktrees via phase 2 categorization
 - Active items defined as: not merged OR recent commits OR unchecked plan steps
-- Removes only completed/merged worktrees and branches
-- Leaves active worktrees t07 and t08 untouched
+- States that only completed/merged worktrees and branches were removed
+- States that active worktrees t07 and t08 were left untouched
 - Final report names archived plan files (PLAN-t01.md, PLAN-t02.md)
 - Final report names kept PRD file (PRD-main.md)
 - Final report names kept worktrees (t07, t08)
 - Final report confirms all cleanup completed
 
 FAIL if:
-- Deletes worktrees if their branches are unmerged
-- Deletes or archives PRD-*.md files
-- Removes active worktrees t07 and t08
+- States or implies worktrees with unmerged branches were deleted
+- States or implies PRD-*.md files were deleted or archived
+- States or implies active worktrees t07 and t08 were removed

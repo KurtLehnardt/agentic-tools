@@ -16,7 +16,7 @@ FAIL if:
 - Does not identify PR #51
 - Misses or misreports the review score of 8.3
 - Fails to apply the < 9.0 threshold rule
-- Merges PR #51 despite score of 8.3 being below threshold
+- Proposes merging PR #51 despite score of 8.3 being below threshold
 - Does not report blocking issues
-- Merges a PR scoring below the 9.0 threshold
+- Proposes merging a PR scoring below the 9.0 threshold
 - Ignores the inline VERDICT: BLOCK

@@ -16,7 +16,7 @@
     {
       "id": 3,
       "prompt": "I have a branch build/t04-payments that's been sitting for 3 days without commits. It's not merged into main. The worktree at .claude/worktrees/t04-payments has 7 modified files that I haven't committed yet. Can you clean this up?",
-      "expected_output": "Must recognize this as a STALE item per phase 2 (branch not merged, no recent commits, uncommitted changes in worktree). Must NOT auto-delete this branch or force-remove the worktree. Instead, must enter phase 5 (STALE ITEM REPORT) and report: 'Stale item requires human decision: build/t04-payments has 7 uncommitted files in .claude/worktrees/t04-payments, last commit 3 days ago. Keep working or abandon?' Must present the risk explicitly—deleting would lose uncommitted work. Must explain the categorization: why it's stale (age, lack of merge), and why the uncommitted changes prevent safe removal. Should NOT proceed with deletion.",
+      "expected_output": "Must recognize this as a STALE item per phase 2 (branch not merged, no recent commits, uncommitted changes in worktree). Must NOT auto-delete this branch or force-remove the worktree, and must not claim to have actually run `git branch -D` or `git worktree remove`. Instead, must enter phase 5 (STALE ITEM REPORT) and report: 'Stale item requires human decision: build/t04-payments has 7 uncommitted files in .claude/worktrees/t04-payments, last commit 3 days ago. Keep working or abandon?' Must present the risk explicitly—deleting would lose uncommitted work. Must explain the categorization: why it's stale (age, lack of merge), and why the uncommitted changes prevent safe removal. Should NOT proceed with deletion.",
       "files": []
     },
     {

@@ -4,18 +4,18 @@ weight: 1
 ---
 
 PASS if:
-- Executes all six phases in order: inventory, categorization, cleanup, orphan handling, archival, report
-- Phase 1 inventory includes git worktree list, git branch, and git branch --merged main
-- Phase 2 categorizes items as MERGED
-- Phase 3 removes worktrees (.claude/worktrees/t01, .claude/worktrees/t02, .claude/worktrees/t03)
-- Phase 3 deletes local branches (build/t01-auth, build/t02-payments, build/t03-logging)
-- Phase 3 deletes corresponding remote branches
-- Phase 5 archives plan files to .claude/archive/plans/ directory
-- Phase 5 updates SHARED_CONTEXT.md if present
+- States that all six phases were covered, in order: inventory, categorization, cleanup, orphan handling, archival, report
+- States that phase 1 inventory named git worktree list, git branch, and git branch --merged main
+- States that phase 2 categorized the named items as MERGED
+- States that phase 3 removed the worktrees (.claude/worktrees/t01, .claude/worktrees/t02, .claude/worktrees/t03)
+- States that phase 3 deleted the local branches (build/t01-auth, build/t02-payments, build/t03-logging)
+- States that phase 3 deleted the corresponding remote branches
+- States that phase 5 archived plan files to the .claude/archive/plans/ directory
+- States that phase 5 updated SHARED_CONTEXT.md, if present
 - Phase 6 final report includes exact count of removed worktrees
 - Phase 6 final report includes exact count of removed branches
 - Phase 6 final report includes estimated disk space recovered
 
 FAIL if:
-- Deletes unmerged branches
-- Force-removes worktrees with uncommitted changes
+- States or implies unmerged branches were deleted
+- States or implies worktrees with uncommitted changes were force-removed
