@@ -15,7 +15,7 @@ Claude Code plugin that implements a full autonomous code factory. Give it an id
 | `/determine-market-interest` | Is there a market? Discover opportunities (high demand, low supply) or validate one idea you already have |
 | `/idea` | Raw idea → structured PRD with acceptance criteria and service manifest |
 | `/setup` | Detect required services, check vaults, generate .env, guide account creation |
-| `/build` | 7-phase implementation: plan → architect review → exec review → workers → critic → merge |
+| `/build` | 7-phase implementation: plan → architect gate → product gate → workers → gate-check + judge → integration |
 | `/test` | Generate test suites for existing code without modifying implementation |
 | `/deploy` | Deploy to staging/production, run migrations, health check, rollback on failure |
 | `/ship` | Go-to-market engine: strategy doc, landing page, free tool, SEO, AEO infrastructure |
@@ -74,15 +74,15 @@ Takes a raw concept and produces a Product Requirements Document with measurable
 Reads the PRD (or scans the codebase), detects what services are needed, checks your credential vault (1Password CLI, AWS SSM, or .env files), and generates a complete environment configuration. For missing services, it produces a checklist with direct signup links.
 
 ### `/build` — Implementation
-The core engine. Runs a 7-phase pipeline with scored quality gates:
+The core engine. Runs a 7-phase, spec-driven pipeline with binary PASS/FAIL gates (no scores):
 
-1. **Roadmap** — Explore codebase, produce implementation plan
-2. **Architect Review** — Technical review, >= 9.5/10 to proceed
-3. **Executive Review** — Product/UX review, >= 9.5/10 to proceed
-4. **Task Decomposition** — Break plan into non-colliding worktree-safe tasks
-5. **Worker Swarm** — Parallel worker agents on isolated git worktrees
-6. **Critic Review** — Code review per worker, >= 9.5/10 to commit
-7. **Merge & Cleanup** — Merge approved branches, clean worktrees
+1. **Roadmap** — Explore codebase, produce implementation plan mapped to requirement IDs
+2. **Architect Gate** — Binary technical conformance checklist; any FAIL blocks
+3. **Product Gate** — Binary acceptance-criteria checklist; any FAIL blocks
+4. **Task Decomposition** — Break plan into non-colliding worktree-safe tasks, each with a model tier
+5. **Worker Swarm** — One-shot tiered workers on isolated git worktrees
+6. **Gate + Judge** — Deterministic `gate-check.sh` first, then an opus judge; only APPROVED tasks merge, incrementally, into an assembly branch
+7. **Verify & Deliver** — Final integration gate and integration judge on the assembly branch, then merge into the target branch (rollback on failure)
 
 **`--quickly`** — `/build --quickly` is a low-token variant. It keeps the orchestrator and subagent-worker pattern (isolated worktrees, deterministic `gate-check.sh`) but drops the architect and product gates and all per-task review. It ends with one opus review of the full PR and at most one fix round. The PR is never merged for you. Not for BINDING contracts, production migrations, or auth rewrites; use the full pipeline for those. See `skills/build/references/quick-mode.md`.
 
@@ -163,11 +163,10 @@ git clone https://github.com/KurtLehnardt/agentic-tools.git
 
 ## Customization
 
-### Review Thresholds
-Default pass threshold is 9.5/10. Edit scoring rules in:
+### Review Gates
+Gates are binary PASS/FAIL checklists. Edit the checklists in:
 - `skills/build/references/architect-review-prompt.md`
 - `skills/build/references/executive-review-prompt.md`
-- `skills/build/references/critic-review-prompt.md`
 
 ### Worker Behavior
 Modify `skills/build/references/worker-prompt.md` for commit conventions, validation commands, scope rules.

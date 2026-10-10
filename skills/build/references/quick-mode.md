@@ -93,14 +93,21 @@ git worktree add .claude/worktrees/quick-<slug> -b build/quick-<slug> <base_ref>
 - A task with **any** `depends_on` starts only after ALL its dependencies are merged into the assembly branch, then branches from it:
   `git worktree add .claude/worktrees/tNN-desc -b build/tNN-desc build/quick-<slug>`
   Record `BASE_SHA=$(git rev-parse build/quick-<slug>)` at that moment and pass it to the worker as `BUILD_DIFF_BASE`, so the dependencies' merged files are not counted as this task's scope changes.
-- When a task reports `DONE`, re-run its gate from the task worktree (deterministic, no model tokens): `(cd .claude/worktrees/tNN-desc && BUILD_STATE_DIR="$STATE" [BUILD_DIFF_BASE="$BASE_SHA"] "$GATE" tNN)`, with `BUILD_DIFF_BASE` set exactly when the task branched from the assembly branch. If it passes, merge it into the assembly branch from the assembly worktree, in dependency order: `git -C .claude/worktrees/quick-<slug> merge --no-ff build/tNN-desc`. If it fails, treat the task as `BLOCKED`.
+- When a task reports `DONE`, re-run its gate from the task worktree (deterministic, no model tokens): `(cd .claude/worktrees/tNN-desc && BUILD_STATE_DIR="$STATE" [BUILD_DIFF_BASE="$BASE_SHA"] "$GATE" tNN)`, with `BUILD_DIFF_BASE` set exactly when the task branched from the assembly branch. If it passes, merge it into the assembly branch from the assembly worktree, in dependency order, then remove the task worktree and its local branch (same commands and message format as full-pipeline Phase 6):
+
+  ```bash
+  git -C .claude/worktrees/quick-<slug> merge build/tNN-desc --no-ff -m "feat(tNN): description [R-001,R-004] — gate PASS"
+  git worktree remove .claude/worktrees/tNN-desc && git branch -D build/tNN-desc   # -D: tip is in assembly
+  ```
+
+  If the gate fails, treat the task as `BLOCKED`.
 - On a merge conflict, dispatch **one** sonnet resolver subagent scoped to the conflicted files only. It resolves the conflict and nothing else, and may not edit unrelated code.
 - **Max 4 concurrent.** Dispatch a task only when its dependencies are merged into the assembly branch.
 - Use the worker prompt below, filled in per task, with the model tier from the manifest.
 - Workers run the gate themselves before reporting. It is deterministic and spends no model tokens.
 - No judges, no supervisor, no fix-cycle loops.
 
-Worker statuses: `DONE` (gate PASS), `SPEC_CONFLICT` (checklist and code or another requirement contradict; stop and escalate to the human, never guess), `BLOCKED` (gate still failing after the worker's own attempts, or a missing dependency). A task that is `BLOCKED` or `SPEC_CONFLICT` is not merged, so its dependents are not started; record them as skipped in Known issues.
+Worker statuses: `DONE` (gate PASS), `SPEC_CONFLICT` (checklist and code or another requirement contradict; stop and escalate to the human, never guess), `BLOCKED` (gate still failing after the worker's own attempts, or a missing dependency). A task that is `BLOCKED` or `SPEC_CONFLICT` is not merged, so its dependents are not started; record them as skipped in Known issues. Keep the worktree and branch of every unmerged (`BLOCKED` / `SPEC_CONFLICT`) task for inspection, and list their paths in the final report and the PR's Known issues.
 
 On `BLOCKED` with a failing gate: re-dispatch **once** with the gate report appended to the prompt. If it is still blocked, stop retrying and record it as a known issue for the PR body.
 
@@ -192,6 +199,8 @@ If blockers exist, dispatch **one** fix subagent on the PR branch: sonnet, or op
 
 **Max 1 round.** Do not re-review and do not loop. Post a PR comment listing what was fixed and what remains. Anything still failing is reported to the human.
 
+**Cleanup.** After Q5 completes (or is skipped on `PASS`), remove the assembly worktree: `git worktree remove .claude/worktrees/quick-<slug>`. Keep the branch `build/quick-<slug>`: it is the pushed PR branch. Kept worktrees of unmerged tasks stay for inspection; list their paths in the final report.
+
 **Never merge the PR.** The human merges.
 
 ## Status Reporting
@@ -200,10 +209,11 @@ If blockers exist, dispatch **one** fix subagent on the PR branch: sonnet, or op
 - **Q1**: "Plan: N tasks (xS / yM / zL). F files, S shared."
 - **CHECKPOINT**: "Proceed? N tasks, max 4 parallel."
 - **Q2**: "N/N workers DONE. K re-dispatched. B blocked."
-- **Q2** (per task): "tNN DONE, gate PASS, merged into build/quick-<slug> (k/N merged)."
+- **Q2** (per task): "tNN DONE, gate PASS, merged into build/quick-<slug> (k/N merged), worktree and branch removed."
 - **Q3**: "Assembly branch: N tasks merged. Integration gate: PASS/FAIL. PR #N opened."
 - **Q4**: "Review: M/N requirements MET. B blockers."
-- **Q5**: "Fix round applied: b/B blockers addressed. Remaining: r. PR #N awaiting human merge."
+- **Q5**: "Fix round applied: b/B blockers addressed. Remaining: r." (skipped on `PASS`)
+- **Cleanup** (after Q5): "Assembly worktree removed; kept for inspection: [paths of unmerged task worktrees, or none]. PR #N awaiting human merge."
 
 On failure, report the failing criterion and its evidence, never a number alone.
 
@@ -216,6 +226,7 @@ On failure, report the failing criterion and its evidence, never a number alone.
 | Worker `BLOCKED` again | Stop. Note in the PR body under Known issues. |
 | Baseline red at Q0 | Report at CHECKPOINT, gate on delta, proceed. |
 | Task BLOCKED / SPEC_CONFLICT with dependents | Task not merged; dependents not started; list all under Known issues. |
+| Task BLOCKED / SPEC_CONFLICT (unmerged) | Keep its worktree and branch for inspection; list the paths in the final report and PR Known issues. |
 | Merge conflict into assembly branch | One sonnet resolver scoped to the conflict. If it fails, escalate. |
 | `--integration` gate fails | Proceed to PR and record it; Q4 and Q5 address it. |
 | Opus unavailable | HALT before Q4. Never downgrade the reviewer. |
