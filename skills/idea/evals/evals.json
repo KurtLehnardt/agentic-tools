@@ -1,0 +1,29 @@
+{
+  "skill_name": "idea",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I want to build a SaaS that helps small restaurants manage table reservations and customer preferences. Target market is independent restaurants with 2-5 dining rooms. Users should get SMS reminders 1 hour before their reservation, and we'll charge restaurants $49/month.",
+      "expected_output": "PRD must contain all 10 SKILL.md sections. Problem Statement identifies target (independent restaurants 2-5 rooms). Success Criteria include measurable outcomes: uptime SLA, no-show reduction %, concurrent reservations supported. Functional Requirements numbered (FR-01+), use RFC 2119, each with testable acceptance criteria (e.g., \"SMS within 1 minute of scheduled time\"). Technical Requirements specify chosen stack. Service Manifest names exact services: Stripe, Twilio, Supabase. Data Model shows entities: restaurant, table, reservation, customer, preference. User Flows cover manager setup, customer booking, reminder delivery. Risks address: no-show mitigation effectiveness (highest-stakes), SMS failures, payment processing. Scope Boundaries explicitly exclude: staff scheduling, kitchen display system, walk-in management. Should NOT use vague language (\"fast\", \"user-friendly\") without metrics.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "hey so i wanna make a mobile app 4 tracking ur moods throughout the day?? like u just tap in how ur feeling and it shows trends over time. kinda like an emotional journal but rly simple and minimal design lol. maybe monetize w/ premium features later",
+      "expected_output": "PRD must contain all 10 SKILL.md sections despite informal input. Problem Statement identifies target (people tracking emotional patterns). Success Criteria measurable: mood-log frequency (5+ days/week), trend accuracy (>=90% on 7-day windows), startup (<2s). Functional Requirements numbered, RFC 2119, with testable acceptance (e.g., \"mood saves within 500ms\", \"chart displays in 1s\"). Technical Requirements suit 'simple' intent (React Native/Flutter, Firebase). Service Manifest: Firebase/Supabase, analytics, payment (if monetized). Data Model: mood_entries, mood_trends, user profiles. User Flows: logging, viewing trends, settings, data deletion (GDPR). Risks address: user privacy with mental-health data (highest-stakes), habit retention, data breach sensitivity. Scope Boundaries exclude: mood sharing, doctor integration, wearable sync; premium v1 boundary must be defined. Should NOT hallucinate complexity or leave monetization undefined.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "/idea I have an idea for a new feature. We already have a Next.js SaaS app for expense tracking with Supabase backend and Stripe integration. We want to add group expense splitting and automatic settlement. Users should be able to split an expense across multiple people and Stripe should handle the payments between them.",
+      "expected_output": "PRD recognizes feature addition to existing codebase. Problem Statement references existing users, group split-expense need. Success Criteria: settlement minimizes transfers, splits reconcile <5s, 100% accuracy, support <=20 members. Functional Requirements numbered, RFC 2119, testable acceptance (e.g., \"transfer within 1s settlement click\", \"webhook confirms status\"). Non-Functional Requirements: sub-5s settlement latency, 99.5% webhook reliability. Technical Requirements respect stack (Next.js, Supabase, Stripe); add webhooks, schema. Service Manifest: Stripe (new routes), Supabase (schema). Data Model: split_groups, split_ledger, settlement_transactions. User Flows: group setup, add expense, view split, settle, confirm. Risks: payment failure mid-settlement (highest-stakes), race conditions, partial payment. Scope Boundaries exclude: multi-currency, recurring, email invites, SMS. Should NOT suggest migration or treat greenfield.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Build me a social network.",
+      "expected_output": "PRD acknowledges ambiguous input requires rigorous questioning, not assumptions. Phase 1 identifies ambiguities. Phase 2 produces PRD with all 10 sections plus extensive Risks & Open Questions section listing 5+ blocking questions (target user demographics, real-time vs. async messaging, mobile-first/web/both, monetization model, scale targets). Problem Statement defines target user. Success Criteria measurable, not vague. Functional Requirements numbered, RFC 2119. Technical Requirements specify stack ONLY after questioning. Service Manifest, Data Model, User Flows, Non-Functional Requirements, Scope Boundaries required. Should NOT assume PostgreSQL, Redis, React, or architecture without user input. Should NOT skip target definition or measurable success criteria.",
+      "files": []
+    }
+  ]
+}
