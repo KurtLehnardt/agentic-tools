@@ -6,6 +6,7 @@ All verdicts are binary. There are no scores and no thresholds.
 
 ## Inputs
 
+- `$BUILD_STATE_DIR`: the absolute path to the main checkout's build state dir, given to you by the orchestrator along with the task's worktree path and, if the task branched from the assembly branch, its `BUILD_DIFF_BASE` sha. Paths below are relative to it, not to the worktree.
 - **Machine report:** `$BUILD_STATE_DIR/gate/tNN.json`. Its `machine_verdict`, `validation`, `contracts`, `scope`, `test_tampering`, and `baseline_delta` fields are the script's own output.
 - **Ledger rows** for this task's requirement IDs: criterion, type (BINDING/GUIDANCE), scope, verification.
 - **Definition of Done** for the task.

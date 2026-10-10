@@ -164,7 +164,7 @@ Do not run the final PR review against a branch that failed to push.
 
 ## Q4: PR REVIEW
 
-Exactly **one** reviewer subagent, model **opus**. If opus is unavailable, HALT and report; do not review with another model. The reviewer reads the full diff (`gh pr diff <PR>`), the checklist, and `.claude/build/gate/integration.json`. It may not modify code, only read it and post the review.
+Exactly **one** reviewer subagent, model **opus**. If opus is unavailable, HALT and report; do not review with another model. The reviewer reads the full diff (`gh pr diff <PR>`), the checklist, and the integration gate report; give it the absolute `$STATE` path so it reads them from the main checkout's build state dir. It may not modify code, only read it and post the review.
 
 ### Reviewer prompt
 
@@ -172,8 +172,8 @@ Exactly **one** reviewer subagent, model **opus**. If opus is unavailable, HALT 
 You are the single final reviewer of a pull request produced by a low-ceremony build. Nothing
 else reviewed this code. You may NOT modify any file or push; you only read and post a review.
 
-Inputs: the PR diff (`gh pr diff [PR]`), .claude/build/quick/checklist.md,
-.claude/build/gate/integration.json.
+Inputs: the PR diff (`gh pr diff [PR]`), [STATE]/quick/checklist.md,
+[STATE]/gate/integration.json ([STATE] is the absolute path to the main checkout's build state dir).
 
 1. For EVERY R-ID in the checklist, output a binary verdict: MET or NOT_MET.
    - MET requires file:line evidence in the diff showing the acceptance criterion is implemented

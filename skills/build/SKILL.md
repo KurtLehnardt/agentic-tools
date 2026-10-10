@@ -470,7 +470,7 @@ The judge cannot overturn a mechanical FAIL. It can only add blocking issues, ne
 
 ### Step 2 — judge (opus, one-shot)
 
-Dispatch (`model: "opus"`) with `references/judge-review-prompt.md`, the machine report, the ledger rows, and the DoD. The judge adjudicates only what needs judgment: does the code satisfy each requirement's *intent*, or does it merely pass a test written to be passed? Are GUIDANCE artifacts respected? Are there defects the mechanical checks can't see?
+Dispatch (`model: "opus"`) with `references/judge-review-prompt.md`, the machine report, the ledger rows, and the DoD, plus the absolute `$STATE` path as the judge's `BUILD_STATE_DIR`, the task's worktree path, and its `BUILD_DIFF_BASE` sha if it branched from the assembly branch. Fix-cycle judges get the same three. The judge adjudicates only what needs judgment: does the code satisfy each requirement's *intent*, or does it merely pass a test written to be passed? Are GUIDANCE artifacts respected? Are there defects the mechanical checks can't see?
 
 Judge rules:
 
