@@ -167,6 +167,8 @@ git clone https://github.com/KurtLehnardt/agentic-tools.git
 Gates are binary PASS/FAIL checklists. Edit the checklists in:
 - `skills/build/references/architect-review-prompt.md`
 - `skills/build/references/executive-review-prompt.md`
+- `skills/build/references/judge-review-prompt.md` (per-task and integration judge)
+- `skills/build/references/spec-intake.md` (ledger worked examples)
 
 ### Worker Behavior
 Modify `skills/build/references/worker-prompt.md` for commit conventions, validation commands, scope rules.
@@ -202,9 +204,10 @@ agentic-tools/
 │   │   └── references/
 │   │       ├── architect-review-prompt.md
 │   │       ├── executive-review-prompt.md
+│   │       ├── judge-review-prompt.md
 │   │       ├── worker-prompt.md
-│   │       ├── quick-mode.md
-│   │       └── critic-review-prompt.md
+│   │       ├── spec-intake.md
+│   │       └── quick-mode.md
 │   ├── test/
 │   │   ├── SKILL.md
 │   │   └── references/

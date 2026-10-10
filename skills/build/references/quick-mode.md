@@ -96,9 +96,12 @@ git worktree add .claude/worktrees/quick-<slug> -b build/quick-<slug> <base_ref>
 - When a task reports `DONE`, re-run its gate from the task worktree (deterministic, no model tokens): `(cd .claude/worktrees/tNN-desc && BUILD_STATE_DIR="$STATE" [BUILD_DIFF_BASE="$BASE_SHA"] "$GATE" tNN)`, with `BUILD_DIFF_BASE` set exactly when the task branched from the assembly branch. If it passes, merge it into the assembly branch from the assembly worktree, in dependency order, then remove the task worktree and its local branch (same commands and message format as full-pipeline Phase 6):
 
   ```bash
-  git -C .claude/worktrees/quick-<slug> merge build/tNN-desc --no-ff -m "feat(tNN): description [R-001,R-004] — gate PASS"
-  git worktree remove .claude/worktrees/tNN-desc && git branch -D build/tNN-desc   # -D: tip is in assembly
+  git -C .claude/worktrees/quick-<slug> merge build/tNN-desc --no-ff -m "feat(tNN): description [R-001,R-004] — gate PASS" \
+    && git worktree remove .claude/worktrees/tNN-desc \
+    && git branch -D build/tNN-desc   # -D: tip is in assembly
   ```
+
+  The `&&` chain is deliberate: a conflicted merge must leave the task worktree and branch intact. On merge failure, go to the conflict resolver (next bullet); do not remove anything.
 
   If the gate fails, treat the task as `BLOCKED`.
 - On a merge conflict, dispatch **one** sonnet resolver subagent scoped to the conflicted files only. It resolves the conflict and nothing else, and may not edit unrelated code.
