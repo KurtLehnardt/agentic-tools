@@ -402,8 +402,11 @@ Your final message must start with exactly one of:
 TASK_COMPLETE — only when gate-check.sh exits 0 and every DoD line is satisfied.
 SPEC_CONFLICT: [R-ID] — [why] — a requirement cannot be met as written; stop.
 BLOCKED: [reason] — stuck after 3 attempts on a step; stop.
+
+Turn budget: about [LIMIT] tool calls (see Turn budget per worker in Phase 4).
+If you reach it before finishing, stop and report
+BLOCKED: turn budget exhausted — [steps remaining].
 """
-Turn budget: [LIMIT] (see Turn budget per worker in Phase 4).
 ```
 
 Giving workers the same gate script the judge runs is deliberate: it turns review into a spec the worker can satisfy deterministically, instead of a surprise at the end.
@@ -523,7 +526,7 @@ Report which requirement regressed, which merge introduced it, and the rollback 
 | --- | --- |
 | Architect or executive fails 3× | Report which criteria keep failing, with evidence. For the executive this usually means a spec problem — surface the contested criteria for a ledger amendment. |
 | `SPEC_CONFLICT` from any agent | Stop that task, escalate, amend the ledger (with approval), re-dispatch. Never resolve by guessing. |
-| Worker exhausts its turn budget without a final status, first time | Promote one tier, re-dispatch with remaining steps and +50% turns. |
+| Worker reports `BLOCKED: turn budget exhausted` (or returns with no status line), first time | Promote one tier, re-dispatch with remaining steps and +50% turns. |
 | Worker stalls again after promotion | **Return to Phase 4 and re-decompose.** A second stall usually means a badly scoped task or an ambiguous step, not insufficient model. Throwing a bigger model at a bad brief just costs more to fail. |
 | Machine gate fails | Straight back to the worker — no judge dispatch, no cycle counted against the judge limit. |
 | Judge verdict malformed or evidence-free | Re-dispatch judge (max 2), then escalate. |

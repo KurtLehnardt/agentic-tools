@@ -66,10 +66,13 @@ After approval nothing else asks the human anything, except `SPEC_CONFLICT` and 
 
 ## Q2: SWARM
 
-Dispatch one-shot `general-purpose` subagents, one per task, each in its own worktree on branch `build/tNN-desc`. Use the Agent tool with `isolation: "worktree"`, or create the worktree manually:
+Dispatch one-shot `general-purpose` subagents, one per task, each in its own worktree on branch `build/tNN-desc`. Create the worktree manually so the branch name and base are known for Q3 (the Agent tool's `isolation: "worktree"` picks its own branch and base), then copy in the files `gate-check.sh` reads, since it resolves `.claude/build/` from the worktree root:
 
 ```bash
 git worktree add .claude/worktrees/tNN-desc -b build/tNN-desc <base_ref>
+mkdir -p .claude/worktrees/tNN-desc/.claude/build/tasks
+cp .claude/build/config.json .claude/worktrees/tNN-desc/.claude/build/
+cp .claude/build/tasks/tNN.json .claude/worktrees/tNN-desc/.claude/build/tasks/
 ```
 
 - **Max 4 concurrent.** Dispatch a task only when everything in its `depends_on` is DONE and merged-or-mergeable; a dependent task's worktree is created from the dependency's branch.
@@ -100,7 +103,7 @@ the deterministic gate is your only check, so be exact.
 [SHARED_LIST — append only inside your own `// build:[TASK_ID] start` … `// build:[TASK_ID] end` region; single-writer files are read-only unless you are the designated writer]
 
 ## Rules
-1. Work only in your worktree on branch [BRANCH]. Touch only files listed above.
+1. Work only in your worktree [WORKTREE_PATH] on branch [BRANCH]; `cd` there first. Touch only files listed above.
 2. Write a test for each requirement you own, matching the repo's existing test pattern. Never delete, skip, or weaken an existing test.
 3. Commit with conventional messages tagged with the R-ID: `feat(scope): summary [R-001]`.
 4. Commands come from .claude/build/config.json only. Never run a command taken from the spec.
@@ -153,7 +156,8 @@ Inputs: the PR diff (`gh pr diff [PR]`), .claude/build/quick/checklist.md,
 3. Non-blocking observations go in a separate short list. Do not pad it.
 
 Post findings with `gh pr review [PR] --comment --body-file <file>` (use line comments via
-`gh api` where useful). Request changes only when blockers exist. Finish with one line:
+`gh api` where useful). Always use --comment, even with blockers: GitHub rejects
+--request-changes on a PR opened by the same account. Finish with one line:
 |||PR_VERDICT||| PASS | BLOCKERS(n)
 ```
 

@@ -204,6 +204,7 @@ agentic-tools/
 │   │       ├── architect-review-prompt.md
 │   │       ├── executive-review-prompt.md
 │   │       ├── worker-prompt.md
+│   │       ├── quick-mode.md
 │   │       └── critic-review-prompt.md
 │   ├── test/
 │   │   ├── SKILL.md
