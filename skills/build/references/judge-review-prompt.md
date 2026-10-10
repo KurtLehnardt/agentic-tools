@@ -89,12 +89,12 @@ Fresh nitpicks each cycle burn the cycle limit on churn instead of the real defe
 
 Same rules, wider input. Dispatched once, on the assembly branch, after `"$GATE" --integration` has run.
 
-- **Inputs:** `$BUILD_STATE_DIR/gate/integration.json`, the **full ledger** (every requirement ID, all scopes), every task's DoD, and the assembly worktree.
+- **Inputs:** `$BUILD_STATE_DIR` (the absolute path to the main checkout's build state dir, given to you by the orchestrator; not relative to the assembly worktree), `$BUILD_STATE_DIR/gate/integration.json`, the **full ledger** (every requirement ID, all scopes), every task's DoD, and the assembly worktree.
 - **Run every verification method** in the ledger, including those deferred from per-task judging (performance, accessibility, cross-service behavior), using only commands from `config.json`. If a ledger row needs a command that is not in `config.json`, report it as a blocking issue; do not run it.
 - **DEFERRED is not allowed.** Every requirement ID gets MET or NOT_MET. A requirement you cannot verify is NOT_MET with the reason as evidence.
 - A red integration machine report is a FAIL you cannot overturn, except checks listed as known failing at baseline in `baseline.json`.
 - Output the same `|||JUDGE_VERDICT|||` shape with `"task_id": "integration"`, `requirements` covering the full ledger, and no DEFERRED entries.
-- **Write the verdict to `.claude/build/final-verdict.json`** (the JSON between the markers). You may write this file only; you still modify no code.
+- **Write the verdict (the JSON between the markers) to `$BUILD_STATE_DIR/final-verdict.json`.** You may write this file only; you still modify no code.
 
 ## Tone
 
