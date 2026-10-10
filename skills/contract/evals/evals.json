@@ -1,0 +1,35 @@
+{
+  "skill_name": "contract",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need a contract for a feature: add real-time sync to our collaborative editor. Right now users get stale data when multiple people edit the same document. We want changes to propagate within 500ms with less than 1% data loss. The editor is built on Next.js with a PostgreSQL backend. Help me write a contract for this.",
+      "expected_output": "Must produce a CONTRACT-[taskname].md file with five distinct sections: (1) Objective/Intent paragraph explaining why sub-500ms sync matters (collaboration experience, user retention signal); (2) Numbered Acceptance Criteria, each testable — e.g. 'replication latency measures <500ms on synthetic 50-concurrent-user load test' (command-runnable), 'message delivery success rate audited at >99.9%' (metric+threshold), NOT vague adjectives; (3) A Gate section with single executable check that would fail if someone stubbed sync with fake in-memory data; (4) Out of Scope section with 3+ explicit non-goals (e.g., 'conflict resolution algorithm design', 'mobile client implementation'); (5) Owner/Gatekeeper split clarifying who builds vs. who verifies. Should NOT include implementation details like 'use WebSocket' or 'add Redis queue' — that's design, not contract.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "spec this task: make the checkout flow fast and clean and secure. users should feel like its safe. it needs to be production ready.",
+      "expected_output": "Must REJECT bare adjectives ('fast', 'clean', 'secure', 'safe', 'production ready') and convert each into machine-checkable form or flag as open question. Example transformations: 'fast' → ask 'what latency? p95 <500ms? on what hardware?'; 'clean' → ask 'code style? test coverage? UX conversion?'; 'secure' → 'which threats? PCI-DSS? what's the security audit checklist?'. Output should state: 'Cannot proceed with adjectives alone. Each of the following requires a measurable threshold: [list].' Then provide a partial contract framework for the user to fill in. Should NOT produce a acceptance criteria list full of vibes or unverifiable claims like 'users will feel protected'. Must force measurable answers.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "add redis caching to the product search endpoint. loop through results and enrich with inventory levels from the warehouse DB. make sure it's fast. optimize the queries.",
+      "expected_output": "Must REJECT this as imperative pseudocode, not a declarative contract. Rejection should state: 'This describes *how* to build (Redis cache, loop, warehouse DB query), not *what success looks like*. A contract specifies objective and acceptance criteria, not implementation.' Should ask for rephrasing: 'What outcome do you want? E.g., latency improvement? cache hit ratio? user conversion lift?' Must refuse to lock in the Redis+loop+warehouse approach and instead require declarative objective. Output should be a brief explanation + rephrased questions, not a CONTRACT file.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "/contract — define the contract for a caching strategy in our GraphQL API. Clients currently wait 3-5 seconds for product catalog queries. We need sub-1-second response time for 95th percentile at peak load (500 req/s). Cache coherency matters: stale data older than 30 minutes is acceptable, but any stale data must be marked with a 'stale' flag in the response. Success means 90%+ cache hit rate on repeat queries.",
+      "expected_output": "Must recognize trigger phrase '/contract' and 'define the contract for'. Should produce full CONTRACT-[taskname].md with: (1) clear Objective explaining why sub-1s at p95/500rps matters to product experience; (2) Acceptance Criteria with measurable thresholds: 'p95 latency < 1000ms measured under synthetic 500 req/s load', 'cache hit rate >= 90% audited per query type', 'stale-flag accuracy = 100% (false negatives caught by tests)', 'cache invalidation latency <= 30 minutes validated in integration test'; (3) Gate that would fail if someone returns hardcoded sub-1s latency or fake cache stats; (4) Out of Scope (3+ items, e.g., 'query optimization', 'client-side caching', 'distributed cache replication'); (5) Owner/Gatekeeper clarification. All sections present and stub-resistant.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "we want to improve our database query performance. The queries are slow. Can you write a contract so we can measure success?",
+      "expected_output": "Must interrogate vagueness and ask clarifying questions before producing contract. Should state: 'Need measurable target. Specifics: (1) Which queries? All, or specific tables/operations? (2) Current baseline latency? (3) Target latency and percentile (p50, p95, p99)? (4) Load context (QPS)? (5) Which execution environment (dev, staging, prod)? (6) What constitutes success — query time, throughput, or resource utilization (CPU/memory)?' Output should be a partial contract skeleton with OPEN QUESTIONS filled in, and a note: 'Cannot finalize Gate until these specifics are locked.' Must NOT skip to generic criteria like 'faster' or 'optimized'. Should refuse to produce final CONTRACT file until human provides numbers.",
+      "files": []
+    }
+  ]
+}

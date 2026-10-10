@@ -1,0 +1,35 @@
+{
+  "skill_name": "test",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I've built a Next.js SaaS application at ~/work/mynotes with these modules: lib/auth.ts, lib/db.ts, api/routes/notes.ts, components/Editor.tsx, and utils/formatting.ts. I have zero test coverage. Can you /test this thing and tell me where the biggest gaps are?",
+      "expected_output": "Skill must produce Phase 1 coverage analysis that maps all 5 modules, categorizes each as UNTESTED, and assigns risk levels (HIGH: auth.ts and notes.ts route; MEDIUM: db.ts; LOW: Editor.tsx and formatting.ts). Phase 2 must prioritize a test plan with auth and API route as first targets. Phase 3 must dispatch workers to generate test files with unit tests for auth (covering login, token validation, refresh flow) and integration tests for the notes route (create, read, update, delete with auth checks). Phase 4 must validate all generated tests pass: npm test should show 15+ test cases executed and passing. Should NOT modify any of the 5 source files — only create new test files alongside them.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "need to add tests to my express api, i have about 8 routes for user management, file uploads, and data export. theres almost no tests. auth routes are probably the most important to test. the file upload ones are complex with external S3 calls. can you /test these files and prioritize properly?",
+      "expected_output": "Skill must produce coverage analysis identifying three modules by risk: HIGH (user auth routes), MEDIUM (file uploads with S3 dependency), MEDIUM (data export). Test plan must allocate resources: auth routes get 5-7 test cases each covering password validation, JWT handling, and error cases; upload routes get mocks for S3 and tests for multipart parsing, file size limits, and S3 failure scenarios; data export gets 3-4 tests. Phase 3 must generate test files using the test-writer-prompt patterns (vi.mock for S3, proper async/await assertions). Phase 4 validation shows full suite passing. Should NOT modify route implementations even if tests reveal defensive checks the code could add.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "add tests for my payment processing system. the main file is lib/payments/stripe.ts which handles subscription creation, charge processing, and webhook signature validation. it talks to Stripe API and writes to a Postgres DB. this is the most critical module in the app, so it needs solid coverage.",
+      "expected_output": "Skill must dispatch Phase 1 mapping stripe.ts as HIGH risk (payments + external API + data mutations). Phase 2 creates prioritized test plan with categories: (1) unit tests for charge validation logic, (2) integration tests mocking Stripe API responses, (3) edge cases (duplicate webhook IDs, expired signatures, Postgres connection failure). Phase 3 generates comprehensive test suite mocking Stripe API via vi.mock(), using fake Stripe event objects, testing success paths, API failures, and webhook signature failures. Phase 4 must validate npm test shows minimum 12+ test cases all passing. Test file should follow existing project patterns and include Arrange-Act-Assert structure. Should NOT modify stripe.ts implementation file — only write tests.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "I have this legacy API route that's a 200-line file with no dependency injection. It directly imports the database, makes HTTP calls to a third-party API inline, logs directly to stdout, and mixes HTTP request handling with business logic. I need tests but the code is too tangled. What do I do?",
+      "expected_output": "Skill must recognize this as the UNTESTABLE hard branch from Phase 1. Coverage analysis should mark the file as BLOCKED and categorize it as tech debt. Instead of forcing meaningless tests, skill should produce a detailed assessment: identify the tight coupling points (direct DB import, inline HTTP, stdout logging), explain why tests would be brittle and implementation-coupled, recommend specific refactoring steps (extract business logic, inject DB client, mock external API), and optionally write a small set of narrow integration tests that work around the coupling. Should NOT attempt to rewrite tests to pass a hollow stub. Should explain the architectural problem clearly.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "I have an auth module with some existing tests covering login and signup, but they only test the happy path. There's no coverage for token refresh, session expiry, concurrent login edge cases, or 2FA scenarios. I also have a completely untested data export feature that writes CSV files. Both are in the same Next.js app. /test and focus on auth depth improvements since it's mission-critical.",
+      "expected_output": "Skill must produce Phase 1 coverage analysis showing auth.ts as SHALLOW (has tests but missing error/edge cases) and export.ts as UNTESTED, both HIGH risk. Phase 2 prioritizes: (1) auth depth improvement with new test cases for token refresh validation, concurrent session conflicts, and 2FA verification flows; (2) then export.ts new tests for CSV header generation, large file handling, and permission checks. Phase 3 generates focused test suite targeting the gaps: 6-8 new auth tests covering the specific edge cases (session expiry with concurrent requests, refresh token reuse detection), 4-5 export tests covering CSV format and access control. Phase 4 validates all tests pass including the existing happy-path tests. Should NOT modify auth.ts or export.ts implementation — only add tests revealing behavior the implementation already handles.",
+      "files": []
+    }
+  ]
+}

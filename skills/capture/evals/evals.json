@@ -1,0 +1,29 @@
+{
+  "skill_name": "capture",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I ran /verdict on the payment processor refactor and it returned FAIL. Bug: when a user has a $0 balance and adds a free-trial coupon code, the system calculates price as NaN instead of $0. Reproduces every single time. Can you capture this as a regression level?",
+      "expected_output": "Should dispatch a general-purpose subagent to minimize and validate the failure. Output must (1) confirm it's deterministically reproducible with exact steps ($0 balance + free-trial coupon → price NaN), (2) name the level (e.g., 'payment-free-trial-coupon-nan'), (3) tag source as 'verdict-fail', (4) describe observed wrong behavior (price === NaN) and correct behavior (price === 0), (5) report level added to gate, (6) state level is red on current code and will be green after fix. Should NOT skip reproduction phase or assume bug without subagent validation.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "hey our login flow's been a bit wonky. when people use google oauth sometimes they dont get a session but other times it works fine. ive only seen it a handful of times. can you make a test for it?",
+      "expected_output": "Should dispatch subagent to investigate reproducibility. Based on 'sometimes works sometimes doesn't' + unclear trigger conditions, subagent should determine it is NOT deterministically reproducible. Should REFUSE to create a permanent eval level — flaky levels don't guard against regressions. Must recommend /observe instead with monitoring signals like 'oauth session creation failures', count per provider, P50 latency. Output should be clear: non-reproducible failures are not level-ready, they need structured observation. Should NOT create a 'flaky' level or assume the bug is reproducible just because it has been seen.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "/capture — We had a production incident yesterday. Admin API keys were still authenticating requests for 90+ seconds after revocation. This is a security issue. I've confirmed the exact sequence: admin revokes key at T=0, key returns 'revoked' from /keys endpoint at T=1, but API requests using that key still validate until T=90. Happens consistently.",
+      "expected_output": "Should recognize explicit /capture trigger and security context. Must (1) confirm deterministic reproduction (revoke key → immediate API request within 90-second window still succeeds), (2) name level 'api-key-revocation-window-90s', (3) tag source 'prod-incident' and 'security', (4) assert observed wrong behavior (request accepted) and correct behavior (request rejected immediately), (5) add level to gate with security escalation flag, (6) report currently red on main. Should NOT ignore security classification or delay triage. Must treat prod incidents with priority distinct from routine verdict-fails.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Our background job processor occasionally leaves jobs stuck in 'waiting' state instead of moving to 'running'. I've seen it happen 3 times in production over the last week, but I can't trigger it locally. The stuck jobs are from different task types, different times of day, different user IDs. Is there a pattern we can test for?",
+      "expected_output": "Should dispatch a subagent to deeply investigate whether a deterministic path exists (specific task type + concurrency level + database state combination). If investigation confirms no deterministic trigger exists — it's a true race condition or timing-dependent behavior — should REFUSE to create a permanent eval level. Flaky levels give false signal about whether a fix actually works. Must recommend /observe instead, with signals for (1) job state remains 'waiting' for >5 minutes, (2) count per task type and hour of day, (3) correlation with concurrent job volume. Output should be explicit: 'Without deterministic reproduction, this is not ready for a gate level. Route to /observe with these signals.' Should NOT suggest adding a retry daemon as a fix — that masks the underlying cause without confirming the failure mode is understood.",
+      "files": []
+    }
+  ]
+}

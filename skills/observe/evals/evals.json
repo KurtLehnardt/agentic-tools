@@ -1,0 +1,29 @@
+{
+  "skill_name": "observe",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I built a chat agent that calls search_web for real-time data and then summarizes using Claude. It's handling 100 queries/day in production. I need to track P95 latency, token costs, and tool failures for search_web. How do I add observability?",
+      "expected_output": "Response must identify search_web as the single critical use case per Phase 1 (no attempt to instrument both model and tool spans simultaneously). Must recommend a backend (Langfuse MIT, Opik, or MLflow) with justification. Must show or describe the span structure (trace_id, span_id, parent_id, kind='tool', name='search_web', tokens_in, tokens_out, cost_usd, latency_ms, error, eval fields). Must explicitly name all four signals: P95 latency per search_web call, cost per run ($/run in tokens), tool error rate (err% for search failures), and eval pass rate (scored accuracy of summaries). Should NOT prescribe instrumenting the summarization model span in the same phase. Should NOT omit the span schema. Must confirm that spans will be replay-able and alert-able (e.g., alert if p95 > 3000ms or err% > 5%).",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "i have an agent that generates code from natural language. its slow and expensive and sometimes the code doesn't compile. i need to see whats going on. can you instrument this for me? need to track cost, latency, and failures.",
+      "expected_output": "Response must clarify that code generation is the single critical use case (Phase 1 discipline: don't try to instrument the full agent). Must recommend an observability backend (Langfuse preferred for open-source adoption, Opik, or MLflow). Must describe span structure and explicitly name the four signals: P95 latency (tail latency of code generation calls, not mean), $/run (input+output token cost per generation), err% (compilation failures or malformed code), eval pass rate (test pass rate or quality score of generated code). Must explain how to emit spans with kind='model' for the code-generation LLM call and kind='tool' if a compiler validation tool is invoked. Should NOT give generic 'add logging' advice. Should NOT skip the span JSON structure. Must include at least one concrete alert example (e.g., 'alert if cost > $0.10/run' or 'alert if err% > 10%'). Response tone should match the casual input style.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "/observe My autonomous agent system has 15 different LLM calls: planning (claude), routing (haiku), execution (opus), validation (claude), and reporting (gpt-4o). I want comprehensive monitoring across all of them — P95 latency, cost, errors, and quality scores. Set this up.",
+      "expected_output": "Response MUST enforce Phase 1 constraint: redirect to instrumenting ONE critical use case first, explicitly refusing the 15-call blanket approach. Should justify why (e.g., 'instrumenting all 15 at once = 15x span volume, harder to debug, expensive'). Must recommend prioritization logic: which single call (if it silently degraded) would break the system worst? (e.g., planning, because it gates execution). Must name the four signals and explain that the first case measures them on the chosen critical call; expansion comes after proving value. Must NOT provide a 15-trace span architecture or attempt to optimize all 15 in parallel. Must explicitly reference Phase 1 from SKILL.md. Response should conclude with: 'Start with [planning/routing/execution]. Once you have spans, alerts, and eval scoring working, expand phase by phase.'",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "We detected a model call that tried to make an unauthorized AWS API call — it's non-reproducible, only happened once in production. We need observability to catch this again and prevent it from happening. The agent should also block such anomalies. How do I wire this?",
+      "expected_output": "Response must recognize this as a Phase 4 use case (observe for safety + anomaly routing to guards). Must explain that non-reproducible failures become traceable via structured spans: emit span with error field containing the anomaly details (e.g., unexpected egress destination, tool call outside allow-list). Must name all four signals and explain how anomalies surface via err% (unauthorized calls count as tool errors) and how eval pass rate accounts for security violations. Must state that anomalies detected in /observe spans feed to /sandbox (containment policy) and /constitution (prompt integrity). Must describe the span schema (trace_id, span_id, error, eval fields) and how the error field captures the security event. Should NOT just talk about general error handling; must reference the downstream guard integration. Must include a concrete example: 'If span.error contains \"unauthorized AWS call\", route to /sandbox containment and /constitution redirection guards.' Response should conclude with how to set alerting on err% for this specific agent.",
+      "files": []
+    }
+  ]
+}

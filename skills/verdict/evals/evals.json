@@ -1,0 +1,29 @@
+{
+  "skill_name": "verdict",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Verdict on feature/checkout-refactor. PR #42 in the monorepo. Worker claims: 'all 23 unit tests pass, integration suite green, e2e checkout flow passes, code review approved by @alice.' Branch is based on origin/main as of this morning.",
+      "expected_output": "Must rerun the verdict from zero: (1) git fetch origin, checkout PR #42, verify the diff against origin/main. (2) Rerun the gate command worker used (unit + integration + e2e suite). (3) Do NOT accept the worker's claim of 23 passing tests; recount on rerun. (4) Structure output as |||VERDICT||| JSON block with: branch name, reran_from_source: true, claims array listing each acceptance criterion (unit tests, integration, e2e), evidence from YOUR rerun (not worker's), verdict PASS/FAIL per claim. (5) If all claims pass on rerun and implementation is not a stub, output weighted_verdict: 'MEETS', ready to merge. Should NOT output MEETS based on the worker's report—only based on evidence the gate regenerated.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "hey can u check if my pr actually passed. branch fix/cart-total. the tests all pass, gateway green, and i optimized the calculation. theres 2 acceptance criteria: (1) returns correct cart total with tax, (2) handles empty cart without error. got green on both.",
+      "expected_output": "Must detect casual input and incomplete specificity. Refetch the branch and rerun the suite firsthand. Critical: Check INTENT, not just letter. Look for signs the worker may have hardcoded the test fixture (e.g., cart total test only passes for a specific test basket, fixture is hardcoded instead of calculated; empty cart handler is a stub return instead of real logic). If implementation is a fixture/stub that happens to pass tests, output verdict REVISE with blocking reason 'letter passes (tests green) but intent fails (hardcoded fixture, not real calculation)'. Must structure |||VERDICT||| JSON with all 5 phases shown: refetch evidence, rerun results, claim-by-claim with explicit evidence, letter_vs_intent field noting 'fixture' concern, weighted_verdict REVISE if suspected. Should NOT output MEETS just because tests are green.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "/verdict — branch build/auth-mfa. Worker reports: 'all 18 auth tests pass, secret rotation works, two-factor setup passes, OTP validation is correct.' I need zero-trust review on this. Did it actually pass on a fresh run?",
+      "expected_output": "Uses explicit zero-trust trigger. Must refetch origin/main fresh, checkout build/auth-mfa, rerun the full auth gate (18 unit tests + secret rotation + 2FA + OTP validation). Do NOT assume tests pass—rerun them. If on YOUR rerun some test actually fails (e.g., secret rotation test fails because key rotation was not committed, or OTP validation fails under concurrent requests), output REVISE with that specific failing claim and evidence from the rerun (e.g., 'secret rotation test failed: timeout in rerun, 12s > 10s SLA'). Document the blocking criterion. Structure as |||VERDICT||| JSON. Should NOT output MEETS without verifying the actual test results on rerun.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Judge this PR #55 on acceptance criteria. The contract states: 'Criterion A: user can create a note with title+body. Criterion B: notes persist to database after save. Criterion C: concurrent edits do not corrupt data.' Worker says all pass. I want a full verdict breakdown.",
+      "expected_output": "Must deliver structured |||VERDICT||| JSON output with all required fields: branch (from PR #55), reran_from_source: true, claims array with exactly 3 entries (one per criterion: A=create note, B=persist, C=concurrent safety). Each claim entry must have criterion number, claim description, evidence field (what you observed on rerun, not worker claim), and verdict (PASS/FAIL). Must include letter_vs_intent assessment (e.g., 'concurrent edits test uses mutex mock that doesn't reflect real contention'). weighted_verdict: MEETS (if all pass + intent ok) or REVISE (if any fail or intent gap). blocking array listing any failing criterion numbers. Should NOT output a simple yes/no; must show claim-by-claim breakdown with evidence from YOUR rerun. Should NOT accept test results without explicit evidence.",
+      "files": []
+    }
+  ]
+}

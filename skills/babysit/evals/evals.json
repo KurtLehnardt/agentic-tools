@@ -1,0 +1,35 @@
+{
+  "skill_name": "babysit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I have 4 workers running on build/t01-database, build/t02-api, build/t03-auth, and build/t04-frontend branches. Can you check on them? Some have been running for a while.",
+      "expected_output": "Must discover all 4 build/* worktrees and report on each. Must assess progress for each by reading git history (commits, file changes, time since last commit). Must detect problem types (STALLED, SLOW, SCOPE DRIFT, REPEATED FAILURE, NO PROGRESS, BLOCKED) if applicable. Must write NUDGE.md atomically to problem workers only—not to healthy workers. Console report must use tabular format showing task ID, step progress (N/M steps), last commit time, and problem status. Should NOT modify any code files or git state. Should NOT write NUDGE.md to workers with healthy progress.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "can you supervise workers for me? i have a couple build branches going and want to make sure theyre making progress. its been running for a bit.",
+      "expected_output": "Must recognize 'supervise workers' as babysit trigger despite lowercase/informal tone and spacing. Must execute same discovery and assessment as Case 1. Must match worker count and progress accurately. NUDGE.md files must use atomic write pattern (write .NUDGE.md.tmp then move). Console report must show timestamp, tick count (N/24 for 2-hour limit), and problem summaries. Should NOT fail on informal input. Should NOT skip phases due to casual phrasing.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "/babysit — check build/t01-schema-migration (12 mins idle, 3 commits total), build/t02-indexing (8 mins since last commit, 5 commits, modified src/db/indexes.ts correctly), and build/t03-triggers (20 mins idle, no commits yet, started 25 mins ago). Worker t01 is on a Medium task. Worker t02 is on a Small task. Worker t03 is on a Large task.",
+      "expected_output": "Must detect t01 as STALLED (12 mins idle, no uncommitted work). Must NOT nudge t02 (making progress, files in scope). Must detect t03 as NO PROGRESS (25 mins active, zero commits). Must write NUDGE.md for t01 and t03 with problem-specific templates (STALLED template for t01, NO PROGRESS template for t03). Must NOT write NUDGE.md for t02. Console report must show: t01 status STALLED, t02 status healthy (✓), t03 status NO PROGRESS. Should NOT confuse elapsed time with stall time.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "I ran /loop 5m /babysit and it's been going for 2 hours. Check the workers one more time.",
+      "expected_output": "Must detect that 2-hour hard limit (24 ticks × 5 min) has been reached. Must output final console report with warning: 'Babysit auto-stopped after 2 hours.' Must NOT reschedule the next babysit tick. Must NOT continue looping. Should exit gracefully after report, not error or hang. Summary must still show active worker status and any final nudges written in the last tick.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "babysit: build/t05-payment-processor has modified src/auth/login.ts (outside its scope—only owns src/payments/*), and build/t06-email-service made 5 commits all named 'fix(t06): step 2' without advancing to step 3. Previous check found t05 stalled, now it has uncommitted changes. Check both.",
+      "expected_output": "Must detect t05 SCOPE DRIFT (modified file outside owned list: src/auth/login.ts not in src/payments/*). Must detect t06 REPEATED FAILURE (5 commits on same step). If previous NUDGE.md exists for t05, must overwrite with new SCOPE DRIFT nudge, and console must log 'Overwrote previous STALLED nudge with SCOPE DRIFT nudge for t05'. Must delete/remove NUDGE.md from t05 if it has since been marked healthy (stale nudge cleanup). NUDGE.md for t05 must list file-specific instruction to revert src/auth/login.ts. NUDGE.md for t06 must suggest trying different approach or requesting BLOCKED status. Should NOT assume worktree state from prior checks—must re-read git state fresh each tick.",
+      "files": []
+    }
+  ]
+}
