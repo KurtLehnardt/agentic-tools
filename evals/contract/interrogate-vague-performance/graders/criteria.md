@@ -5,7 +5,7 @@ weight: 1
 
 PASS if:
 - Asks all six clarifying questions: (1) Which queries? (all, or specific tables/operations); (2) Current baseline latency?; (3) Target latency and percentile (p50, p95, p99)?; (4) Load context (QPS)?; (5) Which execution environment (dev, staging, prod)?; (6) What constitutes success (query time, throughput, resource utilization)?
-- Produces a CONTRACT-* file
+- Includes the complete partial CONTRACT-*.md content in the reply
 - Contains partial contract skeleton with sections labeled
 - Records all six clarifying questions in an OPEN QUESTIONS section
 - Notes "Cannot finalize Gate until these specifics are locked" or equivalent statement
@@ -17,7 +17,7 @@ PASS if:
 
 FAIL if:
 - Fails to ask any of the six clarifying questions
-- Does not produce a CONTRACT-* file
+- Does not include the complete partial CONTRACT-*.md content in the reply
 - Invents latency numbers, percentiles, or load targets not provided by user
 - Uses vague acceptance criteria like 'faster', 'optimized', 'improved'
 - Does not record open questions or human decisions

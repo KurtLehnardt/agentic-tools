@@ -4,23 +4,18 @@ weight: 1
 ---
 
 PASS if:
-- Phase 4.5 captures baseline by running gate-check.sh on origin/main
-- baseline.json is created with the 2 pre-existing failing tests marked as 'known_failing_at_baseline'
-- gate-check.sh runs in worker tasks reporting delta against baseline
-- NEW test failures detected by gate-check.sh are reported as regressions
-- The 2 pre-existing failures are NOT reported as task regressions
-- gate-check.sh reports known pre-existing failures with 'known_failing_at_baseline' status
-- Workers successfully complete despite pre-existing failures
-- Judge verdicts reference the baseline context when evaluating task completeness
-- Final verdict distinguishes between pre-build baseline failures and newly introduced failures
-- Merge proceeds without failures introduced by the new code
+- Reply states that Phase 4.5 captures the baseline by running gate-check.sh --integration against origin/main before any worker is dispatched
+- Reply states the baseline is recorded (baseline.json), with the 2 named pre-existing failures (test/auth.spec.ts:42 timeout, test/perf.spec.ts:80 flaky assertion) marked known_failing_at_baseline
+- Reply states gate-check.sh gates workers on delta against that baseline, not on an absolute pass/fail of the whole suite
+- Reply states a NEW failure introduced by a worker's change would be reported as a regression, distinct from the 2 known baseline failures
+- Reply states the 2 known pre-existing failures do not, by themselves, fail a worker's gate or block a task
+- Reply states judge verdicts are expected to reference the baseline context (known_failing_at_baseline) when evaluating requirement status
+- Reply's description of the final/integration verdict distinguishes pre-existing baseline failures from any newly introduced failures
 
 FAIL if:
-- baseline.json is not created or captured from origin/main
-- Pre-existing failures are reported as task regressions
-- Workers are marked as failed due to known pre-baseline failures
-- gate-check.sh does not report delta against baseline
-- Judge verdict does not reference baseline state when evaluating requirements
-- Pre-baseline failing tests are not marked with 'known_failing_at_baseline' status
-- Final report does not distinguish between pre-existing and newly introduced failures
-- Baseline capture is skipped or not run on origin/main
+- Reply never describes capturing a baseline against origin/main before dispatch
+- Reply does not name baseline.json or the known_failing_at_baseline status
+- Reply's described gate logic would fail a worker's task for the 2 named pre-existing failures
+- Reply does not describe gate-check.sh gating on delta against the baseline
+- Reply's description of judge or final-verdict logic fails to distinguish pre-existing from newly introduced failures
+- Reply skips or omits the baseline-capture step from its phase walkthrough

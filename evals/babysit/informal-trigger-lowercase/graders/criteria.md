@@ -5,14 +5,14 @@ weight: 1
 
 PASS if:
 - Recognizes "supervise workers" as babysit trigger despite lowercase/informal tone and spacing
-- Executes discovery and assessment phases (same as formal trigger case)
+- Reply includes discovery and assessment reasoning (the same phases as the formal trigger case)
 - Matches worker count and progress accurately
-- Uses atomic write pattern (.NUDGE.md.tmp → mv) for NUDGE.md files
+- Reply shows the atomic write pattern (heredoc to .NUDGE.md.tmp, then `mv`) for any NUDGE.md content it includes
 - Console report shows timestamp, tick count (N/24 for 2-hour limit), and problem summaries
 
 FAIL if:
 - Fails to recognize trigger due to informal tone or spacing
-- Skips discovery or assessment phases due to casual phrasing
+- Skips discovery or assessment reasoning due to casual phrasing
 - Produces inaccurate worker count or progress assessment
-- Does not use atomic write pattern for NUDGE.md
+- Does not show the atomic write pattern for any included NUDGE.md content
 - Console report missing timestamp, tick count, or problem summaries

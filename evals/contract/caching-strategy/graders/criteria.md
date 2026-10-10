@@ -5,7 +5,7 @@ weight: 1
 
 PASS if:
 - Recognizes trigger phrase '/contract' or 'define the contract for'
-- Produces a CONTRACT-* file
+- Includes the complete CONTRACT-*.md content in the reply
 - Contains all five required sections: Objective, Acceptance Criteria, Gate, Out of Scope, Owner/Gatekeeper
 - Objective explains why sub-1-second p95 latency at 500 req/s peak load matters to product experience
 - Acceptance Criteria includes all four measurable thresholds:
@@ -22,7 +22,7 @@ PASS if:
 
 FAIL if:
 - Fails to recognize /contract trigger
-- Does not produce a CONTRACT-* file
+- Does not include the complete CONTRACT-*.md content in the reply
 - Missing any of the five required sections
 - Objective uses vague language or fails to explain product impact
 - Acceptance Criteria missing any of the four specified thresholds

@@ -4,6 +4,7 @@ weight: 1
 ---
 
 PASS if:
+- Includes the complete per-server srt policy JSON in the reply
 - Describes wrapping each MCP server command with `srt` (e.g., `"command": "srt"`, `"args": [...]`)
 - Explains each server gets its own srt policy (dedicated settings file per server or per-invocation customConfig)
 - Filesystem server: `filesystem.allowWrite=["."]`, `network.allowedDomains=[]`

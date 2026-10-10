@@ -4,27 +4,25 @@ weight: 1
 ---
 
 PASS if:
-- Output references all 9 phases by name: SPEC INTAKE, ROADMAP, ARCHITECT GATE, PRODUCT GATE, DECOMPOSE, DISPATCH PLAN, SWARM, GATE+JUDGE, MERGE & VERIFY
-- Requirements Ledger (v1) is produced with 5 rows mapping each requirement to testable acceptance criteria
-- Each requirement in the ledger is classified as either BINDING or GUIDANCE
-- Verification commands are identified from config.json for each requirement
-- An `|||ARCHITECT_VERDICT|||` block is emitted with `verdict` field set to APPROVED or REVISE
-- If REVISE, blocking issues are listed with explanation
-- Decomposed tasks are named (t01, t02, etc.) with complexity tiers (S/M/L) and model assignments (haiku/sonnet/opus)
-- baseline.json is captured before dispatch
-- All workers report reaching TASK_COMPLETE state
-- Judge verdicts show `verdict: APPROVED` and `status: MET` for all non-deferred requirements
-- Merged branches include commits following conventional format with requirement tags like `feat(tNN): [R-001] description`
+- Reply names and walks through all 9 phases in order: SPEC INTAKE, ROADMAP, ARCHITECT GATE, PRODUCT GATE, DECOMPOSE, DISPATCH PLAN, SWARM, GATE + JUDGE, VERIFY & DELIVER
+- Reply produces a Requirements Ledger (v1) with 5 rows, one per named requirement, each with a testable acceptance criterion
+- Reply classifies each ledger row as BINDING or GUIDANCE
+- Reply states verification commands are sourced from config.json (detected from the repo's own tooling), not invented ad hoc
+- Reply shows an example `|||ARCHITECT_VERDICT|||` block, in the documented shape, with a `verdict` field of APPROVED or REVISE
+- If the shown example verdict is REVISE, blocking issues are listed with explanation
+- Reply names decomposed tasks (t01, t02, ...) each with a complexity tier (S/M/L/XL) and a model assignment (haiku/sonnet/opus)
+- Reply states baseline.json is captured before any worker is dispatched
+- Reply describes the worker protocol: a worker's final message starts with TASK_COMPLETE, SPEC_CONFLICT, or BLOCKED, and a task is only merged after judge APPROVED, never on worker completion alone
+- Reply shows an example `|||JUDGE_VERDICT|||` (or otherwise describes its shape) with MET/NOT_MET/DEFERRED status per requirement
+- Reply states the commit convention carries requirement tags, e.g. `feat(tNN): [R-001] description`
 
 FAIL if:
 - Any of the 9 phases is skipped or not explicitly named
-- Requirements Ledger is absent or incomplete
-- Ledger does not classify each requirement as BINDING or GUIDANCE
-- Verification commands are missing or not sourced from config.json
-- No architect verdict block is provided
-- Architect verdict does not include blocking issues when REVISE is set
-- Tasks lack complexity tiers or model tier assignments
-- baseline.json is not captured before dispatch
-- Any worker fails to reach TASK_COMPLETE
-- Judge verdicts contain DEFERRED or NOT_MET for core requirements that should be MET
-- Merged commits lack requirement ID tags [R-XXX]
+- Requirements Ledger is absent, incomplete, or missing BINDING/GUIDANCE classification
+- Reply does not state that verification commands come from config.json
+- No architect verdict block/shape is shown, or a shown REVISE example omits blocking issues
+- Decomposed tasks lack complexity tiers or model-tier assignments
+- Reply does not mention capturing baseline.json before dispatch
+- Reply claims workers have already reached TASK_COMPLETE or were already merged within this same turn, rather than describing the protocol that would produce that outcome
+- Reply's described judge-verdict shape omits MET/NOT_MET/DEFERRED status
+- Reply's commit convention omits requirement ID tags

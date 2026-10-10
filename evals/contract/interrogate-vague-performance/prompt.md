@@ -6,4 +6,4 @@ allowed_tools: [Read, Glob, Grep, Skill]
 max_turns: 10
 ---
 
-we want to improve our database query performance. The queries are slow. Can you write a contract so we can measure success?
+we want to improve our database query performance. The queries are slow. Can you write a contract so we can measure success? Include the complete CONTRACT-*.md file in your reply.

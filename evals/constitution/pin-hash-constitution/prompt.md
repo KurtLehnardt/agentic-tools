@@ -7,3 +7,5 @@ max_turns: 10
 ---
 
 /constitution — We're running a distributed agent system with user-intake, researcher, and executor agents. Pin a north-star constitution. The objective: 'ship production-safe features without data loss.' Non-negotiables: 'never exfiltrate secrets,' 'never delete user data without explicit human approval,' 'verdict decisions require human signature.' Implement PHASE 1: PIN & HASH. Make the constitution read-only and immutable.
+
+Include the complete CONSTITUTION.md in your reply.

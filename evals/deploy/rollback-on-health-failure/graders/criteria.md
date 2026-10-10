@@ -4,22 +4,22 @@ weight: 1
 ---
 
 PASS if:
-- Pre-flight check passes (npm test and npm run build succeed)
+- States that the pre-flight check passed (npm test and npm run build succeeding)
 - Prompts for clarification on staging vs. production since "go live" is ambiguous
-- Confirms target with user before proceeding
-- Executes migrations if any are pending
-- Deploys via appropriate platform
-- Runs health checks
-- Health checks fail (HTTP 500 on /api/health), triggering rollback
-- Explicitly describes rollback execution (vercel rollback command or git revert)
-- Confirms previous deployment is now live again
-- Reports code deployment was rolled back
+- States it confirmed the target with the user before proceeding
+- States migrations were executed, if any were pending
+- Names the platform it deployed via
+- States health checks were run
+- States the health check failed (HTTP 500 on /api/health), and that this triggered rollback
+- Explicitly describes the rollback execution (names the vercel rollback command or git revert)
+- States the previous deployment is now live again
+- Reports that the code deployment was rolled back
 - Notes that applied migrations may need manual review
 
 FAIL if:
 - Does not prompt for clarification on staging vs. production target
-- Leaves broken deployment live after health check failure
-- Does not execute rollback steps
-- Skips rollback process
-- Does not confirm previous deployment is now active
+- States or implies the broken deployment was left live after health check failure
+- Does not describe rollback steps being taken
+- States or implies the rollback process was skipped
+- Does not state the previous deployment is now active again
 - Does not acknowledge migration review considerations in the report

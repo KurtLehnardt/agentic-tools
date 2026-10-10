@@ -6,4 +6,4 @@ allowed_tools: [Read, Glob, Grep, Skill]
 max_turns: 10
 ---
 
-/capture — We had a production incident yesterday. Admin API keys were still authenticating requests for 90+ seconds after revocation. This is a security issue. I've confirmed the exact sequence: admin revokes key at T=0, key returns 'revoked' from /keys endpoint at T=1, but API requests using that key still validate until T=90. Happens consistently.
+/capture — We had a production incident yesterday. Admin API keys were still authenticating requests for 90+ seconds after revocation. This is a security issue. I've confirmed the exact sequence: admin revokes key at T=0, key returns 'revoked' from /keys endpoint at T=1, but API requests using that key still validate until T=90. Happens consistently. Include the complete eval level (name, tags, assertions, and gate wiring) in your reply.

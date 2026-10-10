@@ -6,7 +6,7 @@ weight: 1
 PASS if:
 - Identifies the duplicate migration ID (both migrations 1 and 2 have id: 1) as a CRITICAL issue
 - Recognizes this will cause migrations to fail or apply in wrong order
-- Fixes the duplicate migration ID in the codebase (changes one of them)
+- Presents the corrected migration list inline with the duplicate ID resolved (e.g. renumbering migration `002_add_users.sql` to `id: 2`)
 - Notes that pnpm workspace wiring is correct with 'link:' syntax
 - Confirms @monorepo/shared and @monorepo/db are properly referenced in app dependencies
 - Verifies that exports in package.json match the actual dist files being imported
@@ -16,7 +16,7 @@ PASS if:
 FAIL if:
 - Misses the duplicate migration ID issue entirely
 - Does not recognize migration numbering as a deployment blocker
-- Fails to fix the CRITICAL duplicate migration ID
+- Fails to present a corrected migration ID assignment for the CRITICAL duplicate
 - Mischaracterizes the workspace setup as broken when it is actually correct
 - Suggests breaking up the monorepo when consolidation is appropriate
 - Reports false issues with the pnpm-lock.yaml syntax

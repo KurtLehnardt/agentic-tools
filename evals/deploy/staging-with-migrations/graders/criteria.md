@@ -4,17 +4,17 @@ weight: 1
 ---
 
 PASS if:
-- Runs pre-flight validation including clean git status, passing tests, and successful build
+- States that pre-flight validation was performed, including clean git status, passing tests, and a successful build
 - Identifies staging as the target environment
-- Executes database migrations before code deploy, specifically mentioning profiles table migration
-- Deploys to Vercel staging environment
-- Runs health checks confirming HTTP 200 on / and /api/health endpoints
+- States that database migrations were executed before code deploy, specifically naming the profiles table migration
+- States it deployed to the Vercel staging environment
+- States health checks were run and confirms HTTP 200 on / and /api/health endpoints
 - Captures and reports the staging deployment URL
 
 FAIL if:
-- Does not run complete pre-flight checks
-- Deploys to production instead of staging
-- Skips pre-flight validation
+- Does not mention pre-flight checks being run
+- States or implies it deployed to production instead of staging
+- States or implies pre-flight validation was skipped
 - Does not mention migrations or the profiles table
-- Fails to verify health checks return 200
+- Does not state that health checks returned 200
 - Does not report the deployment URL

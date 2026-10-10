@@ -6,4 +6,4 @@ allowed_tools: [Read, Glob, Grep, Skill]
 max_turns: 10
 ---
 
-/gate — Shopping cart subtotal calculator. Requirements: (1) Correctly sum prices when valid products added. (2) Never permit negative totals. (3) Reject invalid product IDs. (4) Handle edge case: empty cart should return 0.
+/gate — Build a stub-proof gate for a shopping cart subtotal calculator. Requirements: (1) Correctly sum prices when valid products added. (2) Never permit negative totals. (3) Reject invalid product IDs. (4) Handle edge case: empty cart should return 0. Include the complete gate (code plus the command that runs it) in your reply.

@@ -6,4 +6,4 @@ allowed_tools: [Read, Glob, Grep, Skill]
 max_turns: 10
 ---
 
-I ran /verdict on the payment processor refactor and it returned FAIL. Bug: when a user has a $0 balance and adds a free-trial coupon code, the system calculates price as NaN instead of $0. Reproduces every single time. Can you capture this as a regression level?
+I ran /verdict on the payment processor refactor and it returned FAIL. Bug: when a user has a $0 balance and adds a free-trial coupon code, the system calculates price as NaN instead of $0. Reproduces every single time. Can you capture this as a regression level? Include the complete eval level (name, tags, assertions, and gate wiring) in your reply.

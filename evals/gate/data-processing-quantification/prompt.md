@@ -6,4 +6,4 @@ allowed_tools: [Read, Glob, Grep, Skill]
 max_turns: 10
 ---
 
-i need a gate for a data processing function. requirements: should be performant, should handle edge cases, should work on production data. can you write the eval?
+i need you to build a gate for a data processing function and make sure it's stub-proof. requirements: should be performant, should handle edge cases, should work on production data. can you write the eval? Include the complete gate (code plus the command that runs it) in your reply.
