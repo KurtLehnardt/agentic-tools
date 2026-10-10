@@ -210,7 +210,7 @@ APPROVED requires every criterion PASS and `unmapped_requirements` empty. Otherw
 
 ## Phase 3: PRODUCT GATE
 
-Dispatch the executive (`model: "opus"`). One question: **if this plan is executed exactly as written, is each acceptance criterion satisfied?** Not "is this good product thinking" — that belongs in the ledger, and if it isn't there, the fix is a Phase 0 amendment.
+Dispatch the executive (`model: "opus"`) with `references/executive-review-prompt.md`, the ledger, and the approved plan. One question: **if this plan is executed exactly as written, is each acceptance criterion satisfied?** Not "is this good product thinking" — that belongs in the ledger, and if it isn't there, the fix is a Phase 0 amendment.
 
 **Blocking criteria:**
 
@@ -470,7 +470,7 @@ The judge cannot overturn a mechanical FAIL. It can only add blocking issues, ne
 
 ### Step 2 — judge (opus, one-shot)
 
-Dispatch with `references/judge-review-prompt.md`, the machine report, the ledger rows, and the DoD. The judge adjudicates only what needs judgment: does the code satisfy each requirement's *intent*, or does it merely pass a test written to be passed? Are GUIDANCE artifacts respected? Are there defects the mechanical checks can't see?
+Dispatch (`model: "opus"`) with `references/judge-review-prompt.md`, the machine report, the ledger rows, and the DoD. The judge adjudicates only what needs judgment: does the code satisfy each requirement's *intent*, or does it merely pass a test written to be passed? Are GUIDANCE artifacts respected? Are there defects the mechanical checks can't see?
 
 Judge rules:
 
@@ -526,10 +526,13 @@ A judge with no memory of round one surfaces fresh nitpicks each pass and burns 
 A task is merged only after **APPROVED** (machine gate PASS and judge APPROVED), never on worker completion alone. Merge from the assembly worktree, in dependency order, same message format as before:
 
 ```bash
-git -C .claude/worktrees/assembly-<slug> merge build/tNN-description --no-ff -m "feat(tNN): description [R-001,R-004] — gate PASS, judge APPROVED"
-(cd .claude/worktrees/assembly-<slug> && BUILD_STATE_DIR="$STATE" "$GATE" --integration)
-git worktree remove .claude/worktrees/tNN-description && git branch -D build/tNN-description   # -D: tip is in assembly
+git -C .claude/worktrees/assembly-<slug> merge build/tNN-description --no-ff -m "feat(tNN): description [R-001,R-004] — gate PASS, judge APPROVED" \
+  && (cd .claude/worktrees/assembly-<slug> && BUILD_STATE_DIR="$STATE" "$GATE" --integration) \
+  && git worktree remove .claude/worktrees/tNN-description \
+  && git branch -D build/tNN-description   # -D: tip is in assembly
 ```
+
+The `&&` chain is deliberate: a conflicted merge or a regressed integration gate stops the chain and leaves the task worktree and branch intact for the recovery paths below (conflict → resolver; gate regression → scoped fix loop, else revert).
 
 - On conflict, dispatch the conflict-resolution subagent (sonnet, opus on second failure), scoped to the conflict only.
 - If the `--integration` gate regresses against baseline after a merge, run a scoped fix loop on that task before merging or dispatching anything else; dependents stay waiting. If it cannot be fixed, `git revert -m 1` the merge on the assembly branch and treat the task as BLOCKED.
@@ -550,7 +553,7 @@ Per-task judges verified tasks in isolation, and every `scope: integration` requ
 (cd .claude/worktrees/assembly-<slug> && BUILD_STATE_DIR="$STATE" "$GATE" --integration)
 ```
 
-Then dispatch a final judge (opus) over the **full ledger** on the assembly branch, running every verification method including the deferred ones (perf, a11y, cross-service). It must return a verdict covering every requirement ID with no DEFERRED remaining. Write it to `.claude/build/final-verdict.json`.
+Then dispatch a final judge (opus, the integration-judge variant in `references/judge-review-prompt.md`) over the **full ledger** on the assembly branch, running every verification method including the deferred ones (perf, a11y, cross-service). It must return a verdict covering every requirement ID with no DEFERRED remaining. Write it to `.claude/build/final-verdict.json`.
 
 ### Deliver
 
@@ -632,10 +635,10 @@ On failure, always report the **criterion** that failed and its evidence — nev
 **Included:**
 - `scripts/gate-check.sh` — the deterministic mechanical gate. Needs bash, git, python3. Project-agnostic: every command comes from `config.json`.
 
-**Reference prompts needing updates to match this pipeline:**
-- `references/architect-review-prompt.md` — replace the weighted rubric with the 8 blocking criteria and `|||ARCHITECT_VERDICT|||`.
-- `references/executive-review-prompt.md` — same, against acceptance criteria.
-- `references/judge-review-prompt.md` — rename from `critic-review-prompt.md`; encode the 5 judge rules, the machine-report input, DEFERRED handling, and fix-cycle scoping.
-- `references/worker-prompt.md` — add requirement-ID commits, the `SPEC_CONFLICT` protocol, shared-file region markers, and the self-run gate step.
-- `references/spec-intake.md` (new) — worked examples turning a PRD, an OpenAPI file, and a Gherkin feature set into ledger rows.
+**Reference prompts:**
+- `references/architect-review-prompt.md` — Phase 2 architect gate: 8 blocking criteria, `|||ARCHITECT_VERDICT|||`, SPEC_CONFLICT protocol.
+- `references/executive-review-prompt.md` — Phase 3 product gate: 5 blocking criteria, `|||EXECUTIVE_VERDICT|||`.
+- `references/judge-review-prompt.md` — Phase 6 per-task judge and Phase 7 integration judge: judge rules, machine-report input, DEFERRED handling, fix-cycle scoping, `|||JUDGE_VERDICT|||`.
+- `references/worker-prompt.md` — worker brief: requirement-ID commits, `SPEC_CONFLICT` protocol, shared-file region markers, self-run gate step.
+- `references/spec-intake.md` — worked examples turning a PRD, an OpenAPI snippet, and a Gherkin feature into ledger rows.
 - `references/quick-mode.md` — the `--quickly` pipeline (Q0-Q5), model invariants, worker prompt template, and the single final PR-review prompt.
