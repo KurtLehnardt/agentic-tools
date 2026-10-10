@@ -70,12 +70,12 @@ Maintain a living roadmap (`roadmap-progress.json` or equivalent):
 4. **Always from fresh base.** `git fetch origin` before creating any worktree.
 5. **Commit per plan step.** Small, atomic, described with conventional commits.
 6. **Clean up after merge.** Remove worktree + delete branch.
-7. **3 strikes = escalate.** If a review fails 3 times, escalate to human.
+7. **Bounded retries, then escalate.** A phase gate (architect, product) that fails 3 times, or a task still failing after 5 fix cycles, escalates to the human.
 
 ## Communication with Human
 
 Only speak to the human when:
-- A task is blocked after 3 review cycles.
+- A phase gate fails 3 times, or a task is still failing after 5 fix cycles.
 - Two agents need to modify the same file and you can't sequence them.
 - A plan requires a decision outside technical scope (pricing, legal, product).
 

@@ -43,7 +43,7 @@ Prompt: You are a senior engineer reviewing PR #<NUMBER> for the <PROJECT> proje
 For PRs marked MERGE but with conflicts:
 
 1. Create a worktree: `git worktree add .claude/worktrees/pr-<number> origin/<branch>`
-2. Merge main into the branch: `git merge origin/main`
+2. Merge main into the branch: `git merge origin/main --no-edit`
 3. Resolve conflicts:
    - For file-level conflicts: prefer main's version for shared infrastructure files (package.json, lockfiles, config)
    - For feature-specific files: prefer the PR branch's version

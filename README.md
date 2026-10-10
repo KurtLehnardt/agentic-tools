@@ -82,7 +82,7 @@ The core engine. Runs a 7-phase, spec-driven pipeline with binary PASS/FAIL gate
 4. **Task Decomposition** — Break plan into non-colliding worktree-safe tasks, each with a model tier
 5. **Worker Swarm** — One-shot tiered workers on isolated git worktrees
 6. **Gate + Judge** — Deterministic `gate-check.sh` first, then an opus judge; only APPROVED tasks merge, incrementally, into an assembly branch
-7. **Verify & Deliver** — Final integration gate and integration judge on the assembly branch
+7. **Verify & Deliver** — Final integration gate and integration judge on the assembly branch, then merge into the target branch (rollback on failure)
 
 **`--quickly`** — `/build --quickly` is a low-token variant. It keeps the orchestrator and subagent-worker pattern (isolated worktrees, deterministic `gate-check.sh`) but drops the architect and product gates and all per-task review. It ends with one opus review of the full PR and at most one fix round. The PR is never merged for you. Not for BINDING contracts, production migrations, or auth rewrites; use the full pipeline for those. See `skills/build/references/quick-mode.md`.
 

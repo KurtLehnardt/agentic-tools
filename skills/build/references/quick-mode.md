@@ -212,7 +212,8 @@ If blockers exist, dispatch **one** fix subagent on the PR branch: sonnet, or op
 - **Q2** (per task): "tNN DONE, gate PASS, merged into build/quick-<slug> (k/N merged), worktree and branch removed."
 - **Q3**: "Assembly branch: N tasks merged. Integration gate: PASS/FAIL. PR #N opened."
 - **Q4**: "Review: M/N requirements MET. B blockers."
-- **Q5**: "Assembly worktree removed; kept for inspection: [paths of unmerged task worktrees, or none]." After: "Fix round applied: b/B blockers addressed. Remaining: r. PR #N awaiting human merge."
+- **Q5**: "Fix round applied: b/B blockers addressed. Remaining: r." (skipped on `PASS`)
+- **Cleanup** (after Q5): "Assembly worktree removed; kept for inspection: [paths of unmerged task worktrees, or none]. PR #N awaiting human merge."
 
 On failure, report the failing criterion and its evidence, never a number alone.
 
