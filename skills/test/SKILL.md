@@ -65,7 +65,7 @@ Based on the coverage analysis, create a test plan:
 
 ## Phase 3: TEST GENERATION
 
-Dispatch **Ralph workers** to write tests. Each worker gets a subset of test files.
+Dispatch **one-shot workers** to write tests. Each worker gets a subset of test files.
 
 ```
 Subagent: Task tool, subagent_type="general-purpose"

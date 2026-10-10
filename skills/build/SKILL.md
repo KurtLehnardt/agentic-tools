@@ -1,12 +1,12 @@
 ---
 name: build
-description: 'Orchestrate a spec-driven implementation pipeline: spec intake, requirements ledger, plan, architect gate, product gate, task decomposition with model tiering, parallel ralph-loop workers, a deterministic mechanical gate plus an opus judge, and verified merge. Trigger on "build this", "implement this", "orchestrate this", "build from this spec/contract/PRD", or whenever the user drops a spec, OpenAPI file, or requirements doc and asks for an implementation.'
+description: 'Orchestrate a spec-driven implementation pipeline: spec intake, requirements ledger, plan, architect gate, product gate, task decomposition with model tiering, parallel one-shot workers, a deterministic mechanical gate plus an opus judge, and verified merge. Trigger on "build this", "implement this", "orchestrate this", "build from this spec/contract/PRD", or whenever the user drops a spec, OpenAPI file, or requirements doc and asks for an implementation.'
 user-invocable: true
 ---
 
 # /build — Spec-Driven Implementation Pipeline
 
-You are an **orchestrator**. You do not write code. You dispatch subagents and ralph-loops, gate each phase on verifiable conformance to a specification, and manage the lifecycle from spec to merge.
+You are an **orchestrator**. You do not write code. You dispatch subagents, gate each phase on verifiable conformance to a specification, and manage the lifecycle from spec to merge.
 
 Two rules hold the pipeline together:
 
@@ -22,7 +22,7 @@ Phase 2: ARCHITECT GATE  → Binary technical conformance checklist
 Phase 3: PRODUCT GATE    → Binary acceptance-criteria checklist
 Phase 4: DECOMPOSE       → Tasks, file-ownership protocol, complexity → model tier, DoD
 Phase 4.5: DISPATCH PLAN → Cost/tier preview + baseline capture + human go/no-go
-Phase 5: SWARM           → Tiered ralph-loop workers + babysit supervisor
+Phase 5: SWARM           → Tiered one-shot workers + babysit supervisor
 Phase 6: GATE + JUDGE    → Deterministic gate-check.sh, then opus judge on the remainder
 Phase 7: MERGE & VERIFY  → Merge in dependency order, integration gate, rollback if needed
 ```
@@ -259,7 +259,7 @@ First matching row wins.
 
 **Override:** anything touching authentication, authorization, secrets, payments, PII, or data migration is **never below L**, regardless of file count. Two-line changes in those areas are exactly where cheap models produce plausible, wrong code.
 
-Iteration limits — ralph-loop: S=10, M=20, L=35, XL=50. One-shot fallback: S=20, M=35, L=50, XL=70.
+Turn budget per worker: S=20, M=35, L=50, XL=70.
 
 ### Task manifest
 
@@ -338,7 +338,7 @@ Confirm explicitly if more than 3 tasks land on opus — that usually means the 
 /loop 5m /babysit
 ```
 
-It compares git progress against assigned steps, detects stalls, scope drift, and repeated failures, and atomically writes `NUDGE.md` into a drifting worktree; workers read and delete it each iteration. It also watches **requirement drift** — commits referencing requirement IDs outside the task's assignment are the earliest visible sign of scope creep. Auto-stops at zero `build/*` worktrees or 2 hours.
+It compares git progress against assigned steps, detects stalls, scope drift, and repeated failures, and atomically writes `NUDGE.md` into a drifting worktree; workers read and delete it before each step. It also watches **requirement drift** — commits referencing requirement IDs outside the task's assignment are the earliest visible sign of scope creep. Auto-stops at zero `build/*` worktrees or 2 hours.
 
 ### Worktree setup
 
@@ -353,8 +353,9 @@ printf 'NUDGE.md\n.NUDGE.md.tmp\n' >> .claude/worktrees/tNN-description/.gitigno
 ### Worker dispatch
 
 ```
-/ralph-loop "
-[contents of references/ralph-worker-prompt.md]
+Agent tool: subagent_type="general-purpose", model=[TIER], prompt=
+"""
+[contents of references/worker-prompt.md]
 
 ## Your Assignment
 Task: [TASK_ID]   Branch: build/tNN-description
@@ -393,12 +394,12 @@ It must exit 0. It checks the same things the judge will check, from the same
 script, so there is no benefit in guessing — read its report and fix what it
 flags. Then walk the remaining DoD lines and confirm each.
 
-Only output <promise>TASK_COMPLETE</promise> when gate-check.sh exits 0 and every
-DoD line is satisfied.
-If a requirement cannot be met as written, output SPEC_CONFLICT: [R-ID] — [why] and stop.
-If stuck after 3 attempts on a step, output BLOCKED: [reason] and stop.
-Do not output the completion promise in either case.
-" --max-iterations [LIMIT] --completion-promise "TASK_COMPLETE" --model [TIER]
+Your final message must start with exactly one of:
+TASK_COMPLETE — only when gate-check.sh exits 0 and every DoD line is satisfied.
+SPEC_CONFLICT: [R-ID] — [why] — a requirement cannot be met as written; stop.
+BLOCKED: [reason] — stuck after 3 attempts on a step; stop.
+"""
+Turn budget: [LIMIT] (see Turn budget per worker in Phase 4).
 ```
 
 Giving workers the same gate script the judge runs is deliberate: it turns review into a spec the worker can satisfy deterministically, instead of a surprise at the end.
@@ -406,14 +407,6 @@ Giving workers the same gate script the judge runs is deliberate: it turns revie
 ### Parallelism
 
 Independent tasks dispatch simultaneously; dependent tasks wait for `TASK_COMPLETE`. **Max 4 concurrent.** Start L/XL tasks first — longest tail. Single-session environments dispatch one at a time; note the reduced parallelism in the Phase 4 report.
-
-### Fallback: one-shot workers
-
-If the ralph-loop plugin isn't installed:
-
-> **ralph-loop plugin not detected.** Install with `/plugin install ralph-skills@ralph-marketplace` for iterative self-correcting workers. Continuing with one-shot subagents — the build still completes, but workers won't auto-retry or self-validate in a loop.
-
-Dispatch `subagent_type="general-purpose"` with the same prompt, fallback turn limits, and the same model tier. One-shot doesn't mean cheap.
 
 ---
 
@@ -431,7 +424,7 @@ This runs the validation suite, every binding contract's check command, the scop
 
 The judge cannot overturn a mechanical FAIL. It can only add blocking issues, never remove them.
 
-### Step 2 — judge (opus, one-shot, never a ralph-loop)
+### Step 2 — judge (opus, one-shot)
 
 Dispatch with `references/judge-review-prompt.md`, the machine report, the ledger rows, and the DoD. The judge adjudicates only what needs judgment: does the code satisfy each requirement's *intent*, or does it merely pass a test written to be passed? Are GUIDANCE artifacts respected? Are there defects the mechanical checks can't see?
 
@@ -470,7 +463,7 @@ APPROVED requires: machine gate PASS, every non-deferred requirement MET, every 
 
 ### Fix cycles have a fixed scope
 
-On REVISE, re-dispatch a ralph-loop on the same worktree with only the blocking issues. Then re-judge — but **the fix-cycle judge is scoped, not fresh-eyed**:
+On REVISE, re-dispatch a one-shot worker on the same worktree with only the blocking issues. Then re-judge — but **the fix-cycle judge is scoped, not fresh-eyed**:
 
 ```
 This is cycle [N] for [TASK_ID]. Verify exactly two things:
@@ -490,7 +483,7 @@ A judge with no memory of round one surfaces fresh nitpicks each pass and burns 
 
 1. Merge in dependency order, foundations first, `t99` integration task last.
 2. After each merge, run `scripts/gate-check.sh --integration` on the target branch.
-3. On conflict, dispatch a conflict-resolution loop (sonnet, opus on second failure) scoped to resolving the conflict only — no new behavior.
+3. On conflict, dispatch a conflict-resolution subagent (sonnet, opus on second failure) scoped to resolving the conflict only — no new behavior.
 
 ```bash
 git merge build/tNN-description --no-ff -m "feat(tNN): description [R-001,R-004] — gate PASS, judge APPROVED"
@@ -526,7 +519,7 @@ Report which requirement regressed, which merge introduced it, and the rollback 
 | --- | --- |
 | Architect or executive fails 3× | Report which criteria keep failing, with evidence. For the executive this usually means a spec problem — surface the contested criteria for a ledger amendment. |
 | `SPEC_CONFLICT` from any agent | Stop that task, escalate, amend the ledger (with approval), re-dispatch. Never resolve by guessing. |
-| Worker hits max iterations, first time | Promote one tier, re-dispatch with remaining steps and +50% iterations. |
+| Worker exhausts its turn budget without a final status, first time | Promote one tier, re-dispatch with remaining steps and +50% turns. |
 | Worker stalls again after promotion | **Return to Phase 4 and re-decompose.** A second stall usually means a badly scoped task or an ambiguous step, not insufficient model. Throwing a bigger model at a bad brief just costs more to fail. |
 | Machine gate fails | Straight back to the worker — no judge dispatch, no cycle counted against the judge limit. |
 | Judge verdict malformed or evidence-free | Re-dispatch judge (max 2), then escalate. |
@@ -575,5 +568,5 @@ On failure, always report the **criterion** that failed and its evidence — nev
 - `references/architect-review-prompt.md` — replace the weighted rubric with the 8 blocking criteria and `|||ARCHITECT_VERDICT|||`.
 - `references/executive-review-prompt.md` — same, against acceptance criteria.
 - `references/judge-review-prompt.md` — rename from `critic-review-prompt.md`; encode the 5 judge rules, the machine-report input, DEFERRED handling, and fix-cycle scoping.
-- `references/ralph-worker-prompt.md` — add requirement-ID commits, the `SPEC_CONFLICT` protocol, shared-file region markers, and the self-run gate step.
+- `references/worker-prompt.md` — add requirement-ID commits, the `SPEC_CONFLICT` protocol, shared-file region markers, and the self-run gate step.
 - `references/spec-intake.md` (new) — worked examples turning a PRD, an OpenAPI file, and a Gherkin feature set into ledger rows.

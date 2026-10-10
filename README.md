@@ -80,7 +80,7 @@ The core engine. Runs a 7-phase pipeline with scored quality gates:
 2. **Architect Review** — Technical review, >= 9.5/10 to proceed
 3. **Executive Review** — Product/UX review, >= 9.5/10 to proceed
 4. **Task Decomposition** — Break plan into non-colliding worktree-safe tasks
-5. **Ralph Swarm** — Parallel worker agents on isolated git worktrees
+5. **Worker Swarm** — Parallel worker agents on isolated git worktrees
 6. **Critic Review** — Code review per worker, >= 9.5/10 to commit
 7. **Merge & Cleanup** — Merge approved branches, clean worktrees
 
@@ -168,7 +168,7 @@ Default pass threshold is 9.5/10. Edit scoring rules in:
 - `skills/build/references/critic-review-prompt.md`
 
 ### Worker Behavior
-Modify `skills/build/references/ralph-worker-prompt.md` for commit conventions, validation commands, scope rules.
+Modify `skills/build/references/worker-prompt.md` for commit conventions, validation commands, scope rules.
 
 ### Test Patterns
 Modify `skills/test/references/test-writer-prompt.md` for test framework preferences, coverage targets.
@@ -201,7 +201,7 @@ agentic-tools/
 │   │   └── references/
 │   │       ├── architect-review-prompt.md
 │   │       ├── executive-review-prompt.md
-│   │       ├── ralph-worker-prompt.md
+│   │       ├── worker-prompt.md
 │   │       └── critic-review-prompt.md
 │   ├── test/
 │   │   ├── SKILL.md

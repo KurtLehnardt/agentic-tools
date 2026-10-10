@@ -71,7 +71,7 @@ Extract:
 - **Task ID** (e.g., `t01`)
 - **Assigned steps** (numbered list from the plan)
 - **Files owned** (exclusive file list)
-- **Complexity / iteration limit** (S/M/L)
+- **Complexity / turn budget** (S/M/L)
 
 If the original assignment can't be determined, flag the worktree as `UNKNOWN_ASSIGNMENT` in the console report with a warning: "Cannot determine task assignment for worktree [path]. Check plan files." Do not write a NUDGE.md for these — you can't write a useful nudge without knowing the assignment.
 
@@ -121,7 +121,7 @@ Calculate pace as: `(elapsed time since first commit) / (steps completed)`. If t
 
 ## Phase 5: Write NUDGE.md
 
-For any worktree with a detected problem, write a `NUDGE.md` file into the worktree root. The worker will see this file on its next ralph-loop iteration and should read it.
+For any worktree with a detected problem, write a `NUDGE.md` file into the worktree root. One-shot workers check for this file before each step and should read it.
 
 ### Atomic Write
 
@@ -278,14 +278,14 @@ OVERALL: 10/22 steps complete across 4 workers
 
 ## Integration with /build
 
-The `/build` orchestrator should start `/babysit` automatically when entering Phase 5 (RALPH SWARM) and stop it when Phase 5 completes. Workers using ralph-loop will automatically see the NUDGE.md on their next iteration since ralph-loop re-reads the working directory each cycle.
+The `/build` orchestrator should start `/babysit` automatically when entering Phase 5 (SWARM) and stop it when Phase 5 completes. One-shot workers read NUDGE.md from their worktree root before each step, so a nudge takes effect at the worker's next step boundary.
 
 The babysitter auto-stops when it finds zero active `build/*` worktrees or after 2 hours, whichever comes first.
 
 ### Worker Responsibility
 
-Workers (ralph-loop or subagent) MUST:
-1. Check for `NUDGE.md` in their worktree root at the start of each iteration
+Workers MUST:
+1. Check for `NUDGE.md` in their worktree root before starting each step
 2. If present, read it and follow the action required
 3. Delete `NUDGE.md` after acknowledging it
 4. If the nudge identifies scope drift, revert out-of-scope changes before continuing
