@@ -1,0 +1,41 @@
+{
+  "skill_name": "route",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need a TypeScript utility function that parses ISO 8601 datetime strings and returns a native Date object. Single function, about 30 lines, needs unit tests for valid dates, invalid formats, and edge cases like leap seconds. Low risk — internal tooling, not user-facing. Which model should I route this to, and at what effort level?",
+      "expected_output": "Should route to local small-dense or haiku at low effort. Rationale: narrow (single function), boilerplate (date parsing is well-defined), low-stakes (internal tooling, not auth/payment). Should explicitly state owners run cheap — this is an ownership task, not a verdict. Should NOT recommend sonnet or opus. Should NOT recommend medium/high effort (low-effort owner task beats over-engineered cheap work).",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "write tests 4 my app. were adding a bunch of features and coverage is dropping. need better test suite but im not sure which functions matter most. what model do i use? should i escalate to opus right away?",
+      "expected_output": "Should recognize high ambiguity (\"better tests\" is vague; unclear which functions/modules to prioritize). Should recommend Phase 2: RIGHT-SIZE BEFORE ROUTING UP. Must decompose into narrow subtasks: test auth module, test payment flow, test API endpoints, etc. Then route each subtask cheap (local/haiku@low). Should explicitly state that right-sizing saves cost (narrow cheap task beats vague expensive task). Should NOT escalate directly to opus without decomposing. Should NOT skip the right-sizing phase.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "/route — Implement a Stripe payment webhook receiver that validates signatures, idempotent-inserts transactions, and surfaces errors without data loss. This is for a $75M ARR company; silent failures cost USD thousands per hour. After implementation passes tests, our security team will gate this (their verdict). What model for the implementation owner? What for the verdict? Can the verdict run on Sonnet to save cost?",
+      "expected_output": "Should route owner to opus@high per the High-stakes row of the tier table. Should route verdict to opus@high ALWAYS, regardless of owner model — verdict is a gatekeeper role and must never route down. Must explicitly state: \"Never route the verdict down. The gatekeeper runs at the top rung regardless of what the owner used.\" Should NOT recommend verdict on sonnet, haiku, or local (even if owner succeeded on sonnet). Should explain gatekeeper principle: expensive judge is the insurance policy.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Haiku attempted this feature twice with no progress — both times the gate failed, output was incomplete. Should I escalate to Sonnet? By how much? How do I know when to bump effort instead of bumping model?",
+      "expected_output": "Should recommend escalating ONE rung only (haiku→sonnet). Should state gate-failure rule: \"Gate fails on cheap model twice with no progress → bump model one rung.\" Should distinguish between gate failure (contract unclear, model can't pass the objective test) and low-effort junk (passes gate, but obviously half-baked). Should NOT recommend jumping directly to opus. Should NOT recommend bumping effort when gate failure indicates model escalation needed. Should explain that effort bumps (low→medium→high) come into play when output is low-quality junk but technically passes the gate.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "We escalated a task up the ladder: haiku failed → escalated to sonnet, sonnet failed → escalated to opus. Now opus also fails the gate. We've done 3 escalations (the default cap). What do we do? Can we escalate to a custom model or try again?",
+      "expected_output": "Should recognize escalation cap exceeded (3 rungs: haiku→sonnet→opus). Must state: \"Escalate to human; the contract may be wrong, not the model.\" Should explicitly state failure at opus indicates misaligned acceptance criteria, not model inadequacy. Should NOT recommend re-trying with higher effort on opus. Should NOT recommend a 4th rung or custom model. Should NOT suggest rolling back down and re-trying cheap. Should log the decision and recommend reviewing contract/gate definition with the human.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "Route these 200 narrow docstring-generation tasks to our local Qwen instance to save money.",
+      "expected_output": "Must confirm which local runtime and model ids are actually available in this environment before routing to local, per SKILL.md's verify-before-use rule, rather than assuming a model is installed. Must recommend pairing local execution with /survive so the loop tolerates the smaller model's slips. Should NOT assume a local model is present, and should NOT route the verdict to local.",
+      "files": []
+    }
+  ]
+}
