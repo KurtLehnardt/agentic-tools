@@ -41,6 +41,10 @@ for t in "${target_list[@]}"; do
 done
 
 RUN_ID="vi-$(date -u +%Y%m%d%H%M%S)-$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n')"
+# Earliest possible expiry, used only as a fallback for local-only runs. Each
+# provisioned resource gets its own expires-at tag computed at launch time by
+# provision-ec2.sh or mac-vm.sh, so a later attempt is never considered expired
+# just because preflight ran long ago.
 EXPIRES_AT="$(utc_plus_hours "$TTL_HOURS")"
 ACCOUNT="" ; ARN="" ; REGION="" ; CALLER_CIDR="" ; VCPUS="" ; MEM_MIB=""
 
@@ -133,7 +137,7 @@ ENV
     elif command -v utmctl >/dev/null 2>&1; then echo "mac VM:        utm (utmctl)"
     else echo "mac VM:        UNAVAILABLE (install tart: brew install cirruslabs/cli/tart)"; fi
   fi
-  echo "hard TTL:      $TTL_HOURS h, EC2 instances self-terminate by $EXPIRES_AT"
+  echo "hard TTL:      $TTL_HOURS h after each launch; every EC2 instance terminates itself then"
   echo "tag:           $TAG_KEY=$RUN_ID"
   echo "cost estimate: $EST_LINE"
 } >&2

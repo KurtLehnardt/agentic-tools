@@ -80,6 +80,9 @@ cleanup_on_fail() {
 trap cleanup_on_fail EXIT
 trap 'exit 130' INT TERM
 
+# Local VMs have no self-terminating TTL, but teardown.sh --orphans uses this
+# per-attempt expiry (computed now, not at preflight) to leave active runs alone.
+EXPIRES_AT="$(utc_plus_minutes $(( $(sed -n 's/^TTL_HOURS=//p' "$RD/run.env" 2>/dev/null || echo 2) * 60 + EXPIRES_SLACK_MINUTES )))"
 KEY="$RD/$SCOPE.key"
 ssh-keygen -q -t ed25519 -N '' -C "$VM" -f "$KEY"
 
@@ -137,6 +140,7 @@ PUBLIC_IP=$IP
 SSH_USER=$USER_NAME
 KEY_FILE=$KEY
 REGION=local
+EXPIRES_AT=$EXPIRES_AT
 ENV
 SUCCESS=1
 log "ready: $SCOPE -> $VM ($IP) via $ENGINE"

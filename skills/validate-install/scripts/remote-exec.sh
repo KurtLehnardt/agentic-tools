@@ -9,9 +9,16 @@
 # The step's command text is read verbatim from stdin.
 # Session continuity: a stranger types every step into one terminal, so the
 # working directory and exported variables carry over between steps. On ssh
-# targets the step runs as a login-shell script (it reads ~/.profile and
-# ~/.bashrc) with stdin from /dev/null, so an interactive prompt fails fast
-# instead of hanging; cwd and exports are saved to ~/.vi-session after each step.
+# targets the step runs under `bash -il`, an interactive login shell, so the
+# remote shell reads ~/.bash_profile or ~/.profile and also ~/.bashrc. Stock
+# .bashrc files return early when the shell is not interactive, and that early
+# return would drop the PATH lines that installers such as nvm, bun, and rustup
+# append there. Stdin is /dev/null, so an interactive prompt fails fast instead
+# of hanging. Because there is no terminal, bash prints "cannot set terminal
+# process group" and "no job control in this shell" at startup; those two lines
+# are removed from the transcript. The cwd and exports are saved to
+# ~/.vi-session after each step and restored with eval, which works on bash 3.2
+# (stock macOS), where sourcing a process substitution silently does nothing.
 # The script is staged in a mktemp file (mode 600) on the target and removed
 # after the step.
 # On Windows (SSM, PowerShell) the cwd is saved and PATH is reloaded from the
@@ -54,7 +61,7 @@ TDIR="$RD/transcripts/$SCOPE"
 mkdir -p "$TDIR"
 LOG="$TDIR/$(printf 'step-%02d.log' "$STEP")"
 RAW="$(mktemp)"
-trap 'rm -f "$RAW"' EXIT
+trap 'rm -f "$RAW" "$RAW.f"' EXIT
 
 pass_vars=()
 if [ -n "$PASS_ENV" ]; then
@@ -75,7 +82,7 @@ START="$(date +%s)"
 set +e
 if [ "$TRANSPORT" = ssh ]; then
   # shellcheck disable=SC2016  # expands on the remote side
-  REMOTE_RUNNER='f=$(mktemp); cat >"$f"; bash -l "$f" </dev/null; rc=$?; rm -f "$f"; exit $rc'
+  REMOTE_RUNNER='f=$(mktemp); cat >"$f"; bash -il "$f" </dev/null; rc=$?; rm -f "$f"; exit $rc'
   {
     for v in ${pass_vars[@]+"${pass_vars[@]}"}; do
       printf "export %s='%s'\n" "$v" "$(printf '%s' "${!v}" | sed "s/'/'\\\\''/g")"
@@ -84,7 +91,7 @@ if [ "$TRANSPORT" = ssh ]; then
     cat <<'PRE'
 if [ -f ~/.vi-session ]; then
   vi_path_saved="$(sed -n 's/^VI_PATH=//p' ~/.vi-session)"
-  . <(grep -v '^VI_PATH=' ~/.vi-session) 2>/dev/null
+  eval "$(grep -v '^VI_PATH=' ~/.vi-session)" 2>/dev/null
   cd "${VI_CWD:-$HOME}" 2>/dev/null || cd "$HOME"
   [ -n "$vi_path_saved" ] && PATH="$PATH:$vi_path_saved"
 fi
@@ -95,8 +102,11 @@ vi_rc=$?
 {
   printf 'VI_CWD=%q\n' "$PWD"
   printf 'VI_PATH=%s\n' "$PATH"
-  export -p | grep -Ev '^declare -x (PATH|PWD|OLDPWD|SHLVL|_|VI_[A-Z_]+)=' |
-    grep -Ev "^declare -x ($(echo "$VI_SECRETS" | tr ' ' '|'))="
+  vi_exports="$(export -p | grep -Ev '^declare -x (PATH|PWD|OLDPWD|SHLVL|_|VI_[A-Z_]+)=')"
+  for vi_s in $VI_SECRETS; do
+    vi_exports="$(printf '%s\n' "$vi_exports" | grep -v "^declare -x $vi_s=")"
+  done
+  printf '%s\n' "$vi_exports"
 } > ~/.vi-session
 exit $vi_rc
 POST
@@ -151,6 +161,12 @@ redact() {
   done
 }
 redact "$RAW"
+
+# `bash -il` without a terminal prints these two job-control warnings at startup.
+# They come from the harness, not the README step, so drop them.
+grep -Ev '^(bash: )?(cannot set terminal process group \([-0-9]+\): Inappropriate ioctl for device|no job control in this shell)$' \
+  "$RAW" >"$RAW.f" || true
+mv "$RAW.f" "$RAW"
 
 {
   echo "# step:     $STEP"

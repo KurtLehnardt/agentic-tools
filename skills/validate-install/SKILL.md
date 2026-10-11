@@ -24,6 +24,19 @@ You are an **orchestrator** answering one question: can a stranger clone this re
 
 All helpers live in `scripts/` next to this file. Every script uses `set -euo pipefail` and documents its usage in its header comment.
 
+The agent runs from the user's repo, not from this skill's directory, so always call the helpers by absolute path: `"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/<name>.sh"`, as written in every command below. If `CLAUDE_PLUGIN_ROOT` is empty in the shell, substitute the skill's base directory that was shown when this skill loaded, followed by `/scripts/<name>.sh`. Bash tool calls do not share shell variables, so write the literal run id (and the literal path, if you substituted it) into each command instead of relying on `$RUN_ID` from an earlier call.
+
+### Long-running commands
+
+The Bash tool stops a foreground command after 120 seconds by default and after at most 600 seconds. Provisioning can take about 10 minutes (Windows longer), and a step's default `--timeout` is 1800 seconds, so plan for that:
+
+1. Run `provision-ec2.sh` and `mac-vm.sh create` with `run_in_background: true`, then poll their output, or use a monitor, until the script prints `SCOPE=<scope>` or exits. Running several targets this way also gives you the parallelism Phase 3 asks for.
+2. Run a step in the foreground only when it is short. Pass the Bash tool `timeout: 600000` and give `remote-exec.sh` a `--timeout` below 600 (for example `--timeout 570`), so the script times out and writes its transcript before the tool gives up.
+3. Run a step that may take longer than that (a large build, a model download) with `run_in_background: true` and its normal `--timeout`, then poll until it exits and read `~/.cache/agentic-tools/validate-install/<run-id>/transcripts/<scope>/step-NN.log`.
+4. Run `teardown.sh` in the foreground with `timeout: 600000`. If it has not printed `VERIFIED` by then, run it again; it is idempotent.
+
+A background job can be killed, for example when the session ends, and then the script's own cleanup trap may never run. Teardown still happens: every EC2 instance terminates itself when its TTL ends, and `teardown.sh --orphans` removes everything else that carries the run tag (security groups, key pairs, volumes, the IAM role and profile, and local VMs) once that run's `expires-at` has passed. If you notice that a background provision or step job died, run `teardown.sh --run-id <run-id>` for that run right away instead of waiting for the TTL.
+
 ## Credentials
 
 AWS credentials come from the environment the user already has: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` exported in the shell profile (for example `~/.zshrc`), or `AWS_PROFILE` pointing at a CLI profile. The scripts rely on the AWS CLI's normal credential chain.
@@ -36,22 +49,22 @@ AWS credentials come from the environment the user already has: `AWS_ACCESS_KEY_
 ## Phase 1: Preflight
 
 ```bash
-scripts/preflight.sh --targets linux,windows --instance-type t3.large --region us-east-1 --ttl-hours 2
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/preflight.sh" --targets linux,windows --instance-type t3.large --region us-east-1 --ttl-hours 2
 ```
 
 The script verifies `aws sts get-caller-identity`, resolves the region, reads the caller's public IP, looks up the instance type's vCPU and RAM, reads the standard on-demand vCPU quota (`L-1216C47A`), counts already-tagged instances, and prints a cost estimate for one attempt and for the worst case of three attempts. It creates nothing in AWS. It writes `run.env` under `~/.cache/agentic-tools/validate-install/<run-id>/` and prints `RUN_ID=vi-YYYYMMDDHHMMSS-xxxx`.
 
 Show the user the account, region, targets, instance type, TTL, tag, and cost estimate. **Ask for one confirmation before the first launch** unless `--yes` was passed. Do not ask again for re-provisioning within the same run.
 
-Every resource created in this run carries the tag `agentic-tools:validate-install=<run-id>`, plus a scope tag and an `agentic-tools:expires-at` timestamp. Every EC2 instance gets a hard TTL: user data schedules a shutdown at the TTL and the instance's shutdown behavior is `terminate`, so it deletes itself even if this session dies.
+Every resource created in this run carries the tag `agentic-tools:validate-install=<run-id>`, plus a scope tag and an `agentic-tools:expires-at` timestamp. The timestamp is computed for each attempt when it is provisioned (launch time plus the TTL plus a 20 minute boot allowance), so a later attempt is never mistaken for an expired one. Every EC2 instance gets a hard TTL: user data schedules a shutdown at the TTL and the instance's shutdown behavior is `terminate`, so it deletes itself even if this session dies.
 
 ## Phase 2: Extract the README Steps
 
 ```bash
-scripts/extract-readme-steps.sh README.md
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/extract-readme-steps.sh" README.md
 ```
 
-The script prints each command from shell-tagged code fences in order, with its section heading, and flags heuristics: `UNDOCUMENTED_ENV`, `UNSTATED_PREREQ`, `INTERACTIVE`, and `PLACEHOLDER`. Read the README yourself as well and confirm or dismiss each flag. Build a per-target step list that keeps the README's wording exactly. Where the README branches by OS, take the branch for that target. Where it offers a choice (an API key or a local LLM), validate the path a new user is most likely to take and note the others.
+The script prints each command from shell-tagged code fences in order, with its section heading, and flags heuristics: `UNDOCUMENTED_ENV`, `UNSTATED_PREREQ`, `INTERACTIVE`, `PLACEHOLDER`, and `SKIPPED_FENCE`. It skips fences tagged with a non-shell language, and untagged fences that look like program output or a file tree; check each `SKIPPED_FENCE` line against the README. A heredoc or a backslash-continued command stays one step. The command field is escaped to fit on one line (`\\` for a backslash, `\n` for a newline, `\t` for a tab), so decode it, for example with `printf '%b'`, and pass the original multi-line text to `remote-exec.sh`. Read the README yourself as well and confirm or dismiss each flag. Build a per-target step list that keeps the README's wording exactly. Where the README branches by OS, take the branch for that target. Where it offers a choice (an API key or a local LLM), validate the path a new user is most likely to take and note the others.
 
 Report every assumption the README never states before running anything, for example a required tool version, a system package, an env var the code reads, or a step that only works from inside the cloned directory.
 
@@ -59,13 +72,16 @@ Report every assumption the README never states before running anything, for exa
 
 Run targets in parallel when there is more than one.
 
+Run each of these with `run_in_background: true`, as described under "Long-running commands".
+
 ```bash
-scripts/provision-ec2.sh --run-id "$RUN_ID" --target linux --distro ubuntu --attempt 1
-scripts/provision-ec2.sh --run-id "$RUN_ID" --target windows --attempt 1
-scripts/mac-vm.sh create --run-id "$RUN_ID" --attempt 1 --memory-gb 8
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/provision-ec2.sh" --run-id "$RUN_ID" --target linux --distro ubuntu --attempt 1
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/provision-ec2.sh" --run-id "$RUN_ID" --target windows --attempt 1
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/mac-vm.sh" create --run-id "$RUN_ID" --attempt 1 --memory-gb 8
 ```
 
-- Linux gets an ephemeral ed25519 key pair and a security group that allows only tcp/22 from the caller's `/32`.
+- Linux gets an ephemeral key pair and a security group that allows only tcp/22 from the caller's `/32`. The key is ed25519, except on Arch, where it is RSA 4096 because cloud-init on the Arch images does not accept EC keys.
+- Arch Linux has no official AMIs. With `--distro arch`, the script resolves the newest community image from the arch-ami-list.drzee.net API and logs the image's owner account and name; tell the user it is a community image. If the API cannot be reached or has no image for the region, the script stops and asks for `AMI_ID` (an image the user trusts) or `ARCH_AMI_OWNER` (an owner account the user has verified). Never guess an owner account.
 - Windows gets a security group with no ingress at all and is reached through SSM, using a run-scoped IAM role and instance profile under `/agentic-tools/validate-install/`.
 - Root volumes are gp3 with `DeleteOnTermination=true`. Instances require IMDSv2.
 - The mac VM is cloned from a stock image with no Homebrew, so missing prerequisites show up. Its name `<run-id>-mac-a<N>` acts as its tag.
@@ -77,12 +93,12 @@ If provisioning fails or is interrupted, the script's own trap tears down everyt
 Run each step through `remote-exec.sh`, one call per step, passing the command text verbatim on stdin:
 
 ```bash
-scripts/remote-exec.sh --run-id "$RUN_ID" --scope linux-a1 --step 3 <<'STEP'
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/remote-exec.sh" --run-id "$RUN_ID" --scope linux-a1 --step 3 --timeout 570 <<'STEP'
 git clone https://github.com/owner/repo && cd repo
 STEP
 ```
 
-The working directory and exported variables persist between steps, as they would in one terminal. Every step writes a transcript to `transcripts/<scope>/step-NN.log` containing the command, output, exit code, and duration. Stop a target at its first failing step. Do not improvise extra commands to get past a failure, because that hides the bug a stranger would hit. The only allowed additions are the README's own documented answers to interactive prompts, and the report must name each one.
+The working directory and exported variables persist between steps, as they would in one terminal. On Linux and macOS each step runs in an interactive login bash, so the remote `~/.bashrc` is read and PATH lines that installers such as nvm, bun, and rustup add there take effect in later steps, as they would for a new user who opens a terminal. Every step writes a transcript to `transcripts/<scope>/step-NN.log` containing the command, output, exit code, and duration. Stop a target at its first failing step. Do not improvise extra commands to get past a failure, because that hides the bug a stranger would hit. The only allowed additions are the README's own documented answers to interactive prompts, and the report must name each one.
 
 After the last step, run the README's own "verify" or "usage" command. If the README has none, run the smallest real use of the tool and record that the README lacks a verification step.
 
@@ -92,7 +108,7 @@ Classify each failure as a README bug, a code bug, or an environment problem usi
 
 1. For README and code bugs, fix them on a branch `fix/validate-install-<run-id>` in the repo when it is writable. Otherwise write the proposed patch into the report.
 2. Provision a brand-new machine with the next `--attempt` number and run every step again from step 1. Never reuse the machine that failed.
-3. Tear down the failed attempt's scope right away: `scripts/teardown.sh --run-id "$RUN_ID" --scope linux-a1`.
+3. Tear down the failed attempt's scope right away: `"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/teardown.sh" --run-id "$RUN_ID" --scope linux-a1`.
 4. Stop after attempt 3 for any target and report it as FAIL.
 
 Environment problems get a retry with an adjusted run (bigger volume, another region) and are recorded, but they never change the repo.
@@ -127,21 +143,21 @@ Compute cost from actual instance launch and termination times multiplied by the
 Treat Phases 3 through 7 as a `try` block and teardown as its `finally`. Run it on success, on failure, on a blocked step, when the user interrupts, and when you decide to stop early:
 
 ```bash
-scripts/teardown.sh --run-id "$RUN_ID"
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/teardown.sh" --run-id "$RUN_ID"
 ```
 
 It terminates instances and waits for them, then deletes security groups, key pairs, leftover volumes, the IAM instance profile and role, the local VM, and the local private keys. It then re-queries by tag and prints `VERIFIED: 0 resources ... remain`, or lists what remains and exits 1. It is idempotent, so run it again until it verifies. It touches only resources whose run tag equals this run id. The final report must quote the verification line.
 
-With `--keep`, skip teardown, say that the EC2 TTL still terminates the instances at `expires-at`, and print the exact command: `scripts/teardown.sh --run-id <run-id> --region <region>`.
+With `--keep`, skip teardown, say that the EC2 TTL still terminates the instances at `expires-at`, and print the exact command: `"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/teardown.sh" --run-id <run-id> --region <region>`, with the variable expanded to the real path so the user can paste it into their own terminal.
 
 ### Orphans from crashed runs
 
 ```bash
-scripts/teardown.sh --orphans --all-regions --dry-run   # list what would be deleted
-scripts/teardown.sh --orphans --all-regions             # delete it, then verify
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/teardown.sh" --orphans --all-regions --dry-run   # list what would be deleted
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/teardown.sh" --orphans --all-regions             # delete it, then verify
 ```
 
-Orphan mode finds every run id carrying the tag key. It skips runs whose `expires-at` is still in the future, because another session may be using them, unless `--include-active` is passed.
+Orphan mode finds every run id carrying the tag key. It skips a run while the latest `expires-at` of any of its attempts is still in the future, because another session may be using it, unless `--include-active` is passed.
 
 ## Safety Rules
 

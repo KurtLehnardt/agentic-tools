@@ -11,10 +11,30 @@
 #   FLAG  UNSTATED_PREREQ   <tool>  tool a command calls, never named in prose
 #   FLAG  INTERACTIVE       <n>     step likely to prompt for input
 #   FLAG  PLACEHOLDER       <n>     step contains <angle> or YOUR_ placeholder text
+#   FLAG  SKIPPED_FENCE     <line>  untagged fence that looked like output or a
+#                                   file tree; the agent should confirm the skip
 #
-# Only fenced blocks tagged bash, sh, shell, zsh, console, powershell, pwsh,
-# ps1, cmd, or untagged are treated as commands. A leading "$ " or "> " prompt
-# is stripped and lines ending in "\" are joined. Commented lines are skipped.
+# A multi-line command stays one STEP. That covers heredocs (from the line with
+# <<WORD through the closing WORD line) and continued lines (a trailing "\" in
+# shell, a trailing backtick in PowerShell, a trailing "^" in cmd). The command
+# field is escaped so each STEP stays on one line: a backslash is written as
+# "\\", a newline as "\n", and a tab as "\t". Decode it with printf '%b' before
+# passing it to remote-exec.sh.
+#
+# Fence selection:
+#   - Fences tagged bash, sh, shell, zsh, console, powershell, pwsh, ps1, or cmd
+#     are commands. Fences with any other tag (json, python, yaml, and so on)
+#     are skipped.
+#   - Untagged fences are commands only when they look like commands: no line
+#     starts with a tree-drawing character, and the first non-blank line starts
+#     with a prompt, a relative or multi-segment absolute path (so a slash
+#     command such as /status is not mistaken for one), a VAR=value
+#     assignment, or a known command name.
+#     Otherwise they are skipped and reported with FLAG SKIPPED_FENCE.
+#   - In console blocks only lines that start with a "$ " or "> " prompt are
+#     commands; the prompt is stripped and other lines are treated as output.
+#     Elsewhere a leading prompt is stripped when present.
+#   - Blank lines and comment lines outside heredocs are skipped.
 # The flags are heuristics for the agent to confirm, not verdicts.
 set -euo pipefail
 
@@ -22,35 +42,113 @@ README="${1:-README.md}"
 [ -f "$README" ] || { echo "extract-readme-steps: no such file: $README" >&2; exit 2; }
 
 awk '
+function esc(s) { gsub(/\\/, "\\\\", s); gsub(/\t/, "\\t", s); gsub(/\n/, "\\n", s); return s }
+
+# heredoc_word(line) -> delimiter of the first heredoc on the line, or "".
+# Sets HD_STRIP to 1 for <<- (leading tabs allowed before the delimiter).
+function heredoc_word(line,   i, rest, w) {
+  HD_STRIP = 0
+  while ((i = index(line, "<<")) > 0) {
+    rest = substr(line, i + 2)
+    if (substr(rest, 1, 1) == "<") { line = substr(rest, 2); continue }
+    if (substr(rest, 1, 1) == "-") { HD_STRIP = 1; rest = substr(rest, 2) }
+    sub(/^[ \t]*/, "", rest)
+    if (match(rest, /^["\047]?[A-Za-z_][A-Za-z0-9_]*["\047]?/)) {
+      w = substr(rest, RSTART, RLENGTH); gsub(/["\047]/, "", w); return w
+    }
+    line = rest
+  }
+  return ""
+}
+
+function continued(line) {
+  if (flang ~ /^(powershell|pwsh|ps1)$/) return line ~ /`$/
+  if (flang == "cmd") return line ~ /\^$/
+  return line ~ /\\$/
+}
+
+function emit() {
+  if (buf == "") return
+  n++
+  printf "STEP\t%d\t%s\t%s\t%s\n", n, fsection, (flang == "" ? "-" : flang), esc(buf)
+  cmds[n] = head
+  buf = ""; head = ""
+}
+
+function looks_like_commands(   i, l, w) {
+  for (i = 1; i <= nf; i++) if (fl[i] ~ /^[ \t]*(├|│|└)/) return 0
+  for (i = 1; i <= nf; i++) {
+    l = fl[i]; sub(/^[ \t]+/, "", l)
+    if (l == "") continue
+    if (l ~ /^(\$|>|PS>)[ \t]/ || l ~ /^(\.\.?\/|~\/|\/[^ \t\/]+\/)/ || l ~ /^[A-Za-z_][A-Za-z0-9_]*=/) return 1
+    w = l; sub(/[ \t].*$/, "", w)
+    return (w in known)
+  }
+  return 0
+}
+
+function process_fence(   i, raw, line, w) {
+  buf = ""; head = ""; hd = ""
+  for (i = 1; i <= nf; i++) {
+    raw = fl[i]
+    if (hd != "") {                       # inside a heredoc body: keep verbatim
+      buf = buf "\n" raw
+      line = raw; if (hdstrip) sub(/^\t+/, "", line)
+      if (line == hd) { hd = ""; if (!cont) emit() }
+      continue
+    }
+    if (buf != "") {                      # continuation of the previous line
+      buf = buf "\n" raw
+      line = raw; sub(/^[ \t]+/, "", line)
+      head = head " " line
+    } else {
+      line = raw; sub(/^[ \t]+/, "", line)
+      if (line == "" || line ~ /^#/ || line ~ /^(REM|rem|::)([ \t]|$)/) continue
+      if (flang == "console") {
+        if (line !~ /^(\$|>)[ \t]/) continue          # output, not a command
+        sub(/^(\$|>)[ \t]+/, "", line)
+      } else {
+        sub(/^(\$|>|PS>|PS [^>]*>)[ \t]+/, "", line)
+      }
+      buf = line; head = line
+    }
+    w = heredoc_word(line)
+    if (w != "") { hd = w; hdstrip = HD_STRIP }
+    cont = continued(line)
+    if (cont) sub(/[\\`^]$/, "", head)
+    if (!cont && hd == "") emit()
+  }
+  emit()
+}
+
+function close_fence() {
+  if (cmdfence || (flang == "" && looks_like_commands())) process_fence()
+  else if (flang == "") printf "FLAG\tSKIPPED_FENCE\t%d\n", fstart
+  nf = 0; infence = 0
+}
+
 BEGIN {
-  FS = "\n"; n = 0; infence = 0; cmdfence = 0; section = "(top)"; prose = ""; pending = ""
+  n = 0; infence = 0; section = "(top)"; prose = ""; nf = 0
   split("bash sh shell zsh console powershell pwsh ps1 cmd", L, " ")
   for (i in L) ok[L[i]] = 1
   split("cd export echo cp mv mkdir source cat ls rm set unset sudo chmod chown touch if then fi for do done while true false test exit printf eval exec env read wait cls dir copy del", B, " ")
   for (i in B) builtin[B[i]] = 1
+  split("git cd npm npx pnpm yarn bun bunx node deno corepack nvm fnm volta pip pip3 pipx python python3 py uv uvx poetry conda cargo rustup go make cmake brew apt apt-get dnf yum pacman zypper apk snap flatpak sudo curl wget docker podman kubectl helm terraform export source set cp mv mkdir cat echo chmod ln tar unzip gem bundle ruby mvn gradle java dotnet php composer ollama gh aws gcloud az choco winget scoop iwr irm Invoke-WebRequest Set-ExecutionPolicy sh bash zsh claude just task", K, " ")
+  for (i in K) known[K[i]] = 1
 }
 /^[ \t]*```/ {
   if (!infence) {
-    infence = 1
-    lang = $0; sub(/^[ \t]*```+[ \t]*/, "", lang); sub(/[ \t{].*$/, "", lang); lang = tolower(lang)
-    cmdfence = (lang == "" || (lang in ok))
-  } else { infence = 0; cmdfence = 0; pending = "" }
+    infence = 1; fstart = NR; fsection = section; nf = 0
+    flang = $0; sub(/^[ \t]*```+[ \t]*/, "", flang); sub(/[ \t{,].*$/, "", flang); flang = tolower(flang)
+    cmdfence = (flang in ok)
+  } else close_fence()
   next
 }
-!infence && /^#+[ \t]/ { section = $0; sub(/^#+[ \t]+/, "", section) }
-!infence { prose = prose " " tolower($0); next }
-cmdfence {
-  line = $0
-  sub(/^[ \t]+/, "", line)
-  if (line == "" || line ~ /^#/ || line ~ /^(REM|::) /) next
-  sub(/^(\$|>|PS>|PS [^>]*>)[ \t]+/, "", line)
-  if (line ~ /\\$/) { sub(/\\$/, "", line); pending = pending line " "; next }
-  line = pending line; pending = ""
-  n++
-  printf "STEP\t%d\t%s\t%s\t%s\n", n, section, (lang == "" ? "-" : lang), line
-  cmds[n] = line
-}
+infence { fl[++nf] = $0; next }
+/^#+[ \t]/ { section = $0; sub(/^#+[ \t]+/, "", section) }
+{ prose = prose " " tolower($0) }
 END {
+  if (infence) close_fence()
   for (k = 1; k <= n; k++) {
     c = cmds[k]
     # environment variables: $VAR, ${VAR}, %VAR%, $env:VAR
@@ -66,7 +164,7 @@ END {
     m = split(t, segs, "\n")
     for (j = 1; j <= m; j++) {
       w = segs[j]; sub(/^[ \t]+/, "", w); sub(/^sudo[ \t]+/, "", w); sub(/[ \t].*$/, "", w)
-      if (w == "" || w ~ /^[.\/~$(]/ || w ~ /=/ || (w in builtin) || (w in seent)) continue
+      if (w == "" || w ~ /^[.\/~$(<>]/ || w ~ /=/ || (w in builtin) || (w in seent)) continue
       seent[w] = 1
       alias = (w ~ /^(npm|npx)$/) ? "node" : (w ~ /^pip3?$/) ? "python" : (w == "corepack") ? "node" : w
       if (index(prose, tolower(w)) == 0 && index(prose, alias) == 0) printf "FLAG\tUNSTATED_PREREQ\t%s\n", w

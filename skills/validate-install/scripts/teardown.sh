@@ -203,19 +203,20 @@ count_remaining() {  # count_remaining RUN_ID -> prints leftovers, returns count
   echo "$n"
 }
 
-run_expires_at() {  # run_expires_at RUN_ID -> the run's expires-at tag, or empty
-  local id="$1" r v q="Tags[?Key=='$EXPIRES_TAG_KEY'].Value | [0]"
-  for r in ${REGIONS[@]+"${REGIONS[@]}"}; do
-    v="$(aws --region "$r" ec2 describe-security-groups --filters "Name=tag:$TAG_KEY,Values=$id" \
-      --query "SecurityGroups[0].$q" --output text 2>/dev/null || true)"
-    if [ -z "$v" ] || [ "$v" = None ]; then
-      v="$(aws --region "$r" ec2 describe-instances --filters "Name=tag:$TAG_KEY,Values=$id" \
-        --query "Reservations[0].Instances[0].$q" --output text 2>/dev/null || true)"
-    fi
-    if [ -n "$v" ] && [ "$v" != None ]; then printf '%s' "$v"; return; fi
-  done
-  # Local-only (mac) runs have no AWS tags; fall back to this machine's run.env.
-  sed -n 's/^EXPIRES_AT=//p' "$(run_dir "$id")/run.env" 2>/dev/null || true
+run_expires_at() {  # run_expires_at RUN_ID -> the latest expires-at of any of the run's resources, or empty
+  # Each attempt tags its resources with its own expiry, so take the maximum:
+  # the run is active while any attempt is still inside its TTL.
+  local id="$1" r q="Tags[?Key=='$EXPIRES_TAG_KEY'].Value[]"
+  {
+    for r in ${REGIONS[@]+"${REGIONS[@]}"}; do
+      aws --region "$r" ec2 describe-security-groups --filters "Name=tag:$TAG_KEY,Values=$id" \
+        --query "SecurityGroups[].$q" --output text 2>/dev/null || true
+      aws --region "$r" ec2 describe-instances --filters "Name=tag:$TAG_KEY,Values=$id" \
+        --query "Reservations[].Instances[].$q" --output text 2>/dev/null || true
+    done
+    # Local (mac) attempts have no AWS tags; read this machine's run.env and scope files.
+    cat "$(run_dir "$id")"/*.env 2>/dev/null | sed -n 's/^EXPIRES_AT=//p' || true
+  } | tr '\t' '\n' | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' | sort | tail -n1 || true
 }
 
 discover_run_ids() {
