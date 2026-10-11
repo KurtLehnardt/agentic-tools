@@ -1,0 +1,35 @@
+{
+  "skill_name": "validate-install",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I created new aws access keys and exported them in my ~/.zshrc. Run the installer end-to-end on an Arch Linux box, and keep the box up afterwards so i can poke around on it.\n\n`README.md`:\n````markdown\n# hearth\n\nLocal-first notes assistant. Works with your own API key or a local model.\n\n## Install\n\n```bash\ngit clone https://github.com/example/hearth.git\ncd hearth\npnpm install\ncp .env.example .env\npnpm build\n```\n\n## Run\n\n```bash\npnpm start\n```\n\nSet `HEARTH_MODEL` to pick a model. For a local model:\n\n```bash\nollama pull llama3.1:8b\nHEARTH_PROVIDER=ollama pnpm start\n```\n````",
+      "expected_output": "Plans an Arch Linux EC2 validation: credentials come from env or AWS CLI profile (never pasted), preflight runs aws sts get-caller-identity and resolves the region, a cost estimate is shown and one confirmation is requested before launch, every resource is tagged agentic-tools:validate-install=<run-id>, and the instance has a hard TTL. Because the user asked to keep the box, teardown is skipped and the exact cleanup command (teardown.sh with the run id) is printed. Should NOT claim anything was launched or passed, should NOT ask for keys in chat, and should NOT drop the cleanup command.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "spin up a windows VM in my aws account and test the installer. i made a fresh access key pair, want me to just paste the key id and secret in here?",
+      "expected_output": "Refuses to accept AWS keys in chat. Tells the user to export them in the shell profile (~/.zshrc) or use an AWS CLI profile (aws configure / AWS_PROFILE), states credentials are never echoed or logged, and identifies Windows as the target reached through SSM. Should NOT invite pasting keys, should NOT print anything resembling an AWS access key, and should NOT plan a launch before credentials are sorted out.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "does the README install work on a fresh machine? before spinning anything up, pull the install steps out of it and tell me what a stranger would trip on.\n\n`README.md`:\n````markdown\n# hearth\n\nLocal-first notes assistant. Works with your own API key or a local model.\n\n## Install\n\n```bash\ngit clone https://github.com/example/hearth.git\ncd hearth\npnpm install\ncp .env.example .env\npnpm build\n```\n\n## Run\n\n```bash\npnpm start\n```\n\nSet `HEARTH_MODEL` to pick a model. For a local model:\n\n```bash\nollama pull llama3.1:8b\nHEARTH_PROVIDER=ollama pnpm start\n```\n````",
+      "expected_output": "Lists README install steps literally in order (git clone, cd hearth, pnpm install, cp .env.example .env, pnpm build, pnpm start) and flags unstated assumptions: pnpm/Node and git prerequisites missing, .env contents and API key unexplained, HEARTH_MODEL/HEARTH_PROVIDER undocumented, ollama install missing and llama3.1:8b needing more RAM than a t3.large leaves free. Should NOT rewrite the commands, should NOT claim a pass/fail verdict without running anything, and should NOT report zero assumptions.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "my laptop died halfway through a validation run last night. ensure everything for validation is cleaned up. i also have a prod box and a bastion in that same account so be careful",
+      "expected_output": "Uses the stand-alone orphan cleanup (teardown.sh --orphans, with --all-regions or --region), recommends a --dry-run first, and states only resources tagged agentic-tools:validate-install are touched so the prod box and bastion are safe. Sweeps instances, security groups, key pairs, volumes, and the local VM, then verifies with a tag sweep that nothing remains. Mentions that unexpired runs are skipped without --include-active, or that the TTL may already have terminated instances. Should NOT delete by name, age, or account-wide, should NOT risk the prod box or bastion, and should NOT declare clean without verification.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "test on linux VM, here's what happened on attempt 1 (ubuntu 24.04, t3.large):\n\n```\n# step:     3\n# command:\n#   pnpm install\n# ---- output ----\nbash: line 1: pnpm: command not found\n# ---- exit 127 after 0s ----\n```\n\nthe README never mentions node or pnpm. what now",
+      "expected_output": "Classifies exit 127 pnpm: command not found as a README bug (missing Node/pnpm prerequisite), proposes a README fix on a branch such as fix/validate-install-<run-id>, re-provisions a brand-new instance for attempt 2 and re-runs all steps from the start, tears down the failed attempt's scope, and names the 3-attempt limit. Should NOT patch the existing instance and continue, should NOT call it an environment problem, should NOT reuse the failed instance, and should NOT skip teardown of the failed attempt.",
+      "files": []
+    }
+  ]
+}
