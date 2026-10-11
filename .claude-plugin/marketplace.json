@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Orchestrator pipeline for Claude Code: plan, review, decompose, parallel workers, critic, merge",
-    "version": "1.1.0"
+    "version": "1.2.0"
   },
   "plugins": [
     {
       "name": "agentic-tools",
       "source": "./",
       "description": "Orchestrator pipeline for Claude Code: plan \u2192 review \u2192 decompose \u2192 parallel workers \u2192 critic \u2192 merge",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "keywords": [
         "orchestrator",
         "build",
