@@ -1,0 +1,59 @@
+{
+  "skill_name": "release",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "tag a release for my cli, it ships through my homebrew tap kurt/tap. merge PR 42 first (gh pr checks 42 is all green), then publish the version and update my local install. current version 0.4.2, one fix commit since",
+      "expected_output": "PASS if: - Plans to merge PR 42 after confirming its checks are green - Chooses the merge method by reading the repo's allowed methods (`allow_squash_merge`, `allow_merge_commit`, `allow_rebase_merge` from `gh api repos/{owner}/{repo}`) and recent history, not by assuming one - Infers a patch bump to 0.4.3 from the fix commit - Names updating the formula version, url, and sha256 in the tap repo - Names `brew upgrade` or `brew reinstall` for the local install - States the smoke test compares the installed version to 0.4.3 and runs a basic command - Lists the final report items: version, tag URL, release URL, install result, smoke result  FAIL if: - Omits the sha256 update - Skips the local install step - Hardcodes `--squash` without checking the repo's merge convention - Treats this as a hosted web app deploy",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "/release minor --dry-run. for the HEAD commit, the check run `lint` completed with conclusion failure and `unit` completed with success",
+      "expected_output": "PASS if: - States the release stops because a completed check run (`lint`) on the HEAD commit failed - States that under `--dry-run` preflight uses `git fetch` and a status comparison with upstream instead of `git pull --ff-only` - Does not proceed to bump, commit, tag, or publish steps as live actions - Explains that --dry-run prints the mutating commands without executing them - Tells the user to fix the failing check first and does not suggest bypassing it  FAIL if: - Continues the release despite the failed check - Says it will run `git pull --ff-only` during the dry run - Suggests skipping or retrying around the failing check - Suggests force-moving or deleting any tag",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "new release please. commits since v2.3.0: 'feat(api)!: drop v1 endpoints', 'fix: null check in parser', 'feat: add --json flag'. no bump type given",
+      "expected_output": "PASS if: - Infers a major bump from the `!` marker and states the reasoning - Names the new version as 3.0.0 - States it will ask the user once for confirmation before pushing a major bump - Groups release notes into Breaking Changes, Features, and Fixes  FAIL if: - Chooses minor or patch - Pushes the commit and tag without a confirmation step - Asks for confirmation more than once",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "cut a release of our claude plugin. plugin.json says 1.1.0 and the last tag is v1.1.0, but there are 14 commits since then (8 feat, 3 fix) touching skills/. just publish it and update my local install",
+      "expected_output": "PASS if: - Notes that the installed copy under `~/.claude/plugins/cache/` only refreshes when the plugin.json version changes - States that 1.1.0 must not be reused because files changed since tag v1.1.0 - Infers a minor bump (1.2.0) from the feat commits and states the reasoning - Says plugin.json and marketplace.json must both carry the new version - Names a `claude plugin` update or reinstall step for the local install - States the smoke test compares the installed version to the new tag  FAIL if: - Tags or releases v1.1.0 again without bumping the version - Proposes moving or deleting the existing v1.1.0 tag - Bumps only plugin.json and ignores marketplace.json - Infers a patch or major bump from these commits",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "release a patch. package.json says 2.3.1, Cargo.toml says 2.3.0, VERSION says 2.3.1. last tag is v2.3.1. go ahead and tag it",
+      "expected_output": "PASS if: - Detects that Cargo.toml (2.3.0) disagrees with package.json and VERSION (2.3.1) - States the release stops before any bump, commit, or tag - Lists each version file with its value - Asks the user which value is correct instead of guessing  FAIL if: - Proceeds to bump and tag despite the disagreement - Silently picks one value as correct - Moves or deletes the existing v2.3.1 tag",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "new release please. last tag v0.9.4 and the manifest says 0.9.4. commits since: 'feat(api)!: drop v1 endpoints', 'fix: null check in parser'. no bump type given",
+      "expected_output": "PASS if: - States the 0.x rule makes the breaking change a minor bump - Names the new version as 0.10.0 - States the reasoning with the commit that decided it - States that moving to 1.0.0 only happens if the user asks for it  FAIL if: - Chooses 1.0.0 or any major bump - Chooses a patch bump - Treats the release as needing the major-bump push confirmation",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "cut the first release of this repo. there are no tags yet, package.json says 0.3.0, about 25 commits so far. no bump type given",
+      "expected_output": "PASS if: - States that with no prior tag this is the first release - Uses the current manifest version 0.3.0 as is, so the tag is v0.3.0 - Says release notes cover the whole commit history since there is no earlier tag - Does not try to infer a bump from commits since a last tag  FAIL if: - Bumps to 0.3.1 or 0.4.0 - Fails or stops because `git describe` finds no tag - Proposes diffing against a previous tag that does not exist",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "release a patch. this repo has no CI. the check-runs and statuses for HEAD are both empty. package.json has an npm test script. one fix commit since v1.2.3",
+      "expected_output": "PASS if: - Warns that HEAD has no check runs or statuses, so nothing gates the release - Names running the project's local test command (`npm test`) before proceeding - Proceeds with the release only if the local tests pass - Does not block the release indefinitely because CI is absent - Names the new version as 1.2.4  FAIL if: - Stops the release permanently because no CI result exists - Gates on `gh run list --branch` for the latest workflow run - Proceeds without running or mentioning the local tests",
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "release please. last tag v2.1.0. commits since: 'docs: fix typo in README', 'chore: bump dev deps', 'ci: cache npm'. no bump type given",
+      "expected_output": "PASS if: - Notes the range holds only docs, chore and ci commits with no user-facing change - Asks the user whether to release at all, or defaults to a patch bump to 2.1.1 with the reason stated - Does not choose minor or major  FAIL if: - Chooses minor or major - Releases silently without noting that the range is docs and chore only",
+      "files": []
+    }
+  ]
+}

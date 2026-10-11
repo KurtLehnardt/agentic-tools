@@ -46,6 +46,21 @@ ALIGN → EXECUTE ──────────────→ MEASURE ──�
 
 These compose with the pipeline: `/contract` feeds `/build`, `/gate` hardens what `/build`'s workers must pass, `/verdict` is the merge gate, and `/observe` + `/capture` close the loop back into better routing and evals.
 
+## The Workflow Skills
+
+Four skills that replace prompts people were typing by hand over and over. `/review-pr` is the single-PR variant; `/review-prs` is the bulk variant and is unchanged.
+
+| Skill | Purpose |
+|-------|---------|
+| `/delegate` | Split an ad-hoc task list into independent pieces, size each to a model tier, run each in its own worktree and PR, have an opus critic review it, and merge when CI and review pass |
+| `/review-pr` | Take one PR through adversarial critique, fix, fresh re-review, CI, and merge, with a configurable severity threshold |
+| `/validate-install` | Prove the README install steps work on fresh Linux, Windows, and macOS machines, fix what breaks, and always tear down |
+| `/release` | Cut a versioned release: merge PRs, bump every version source, tag, publish a GitHub release, update the local install, smoke test |
+
+## Hooks
+
+The plugin ships safety hooks in `hooks/hooks.json`: a secret guard that blocks credentials pasted into prompts, a Stop hook that warns while work is unsaved, and a SessionStart notice when the branch is behind main. See [hooks/README.md](hooks/README.md) for what each hook does, how to configure it, and how to run its tests.
+
 ## How It Works
 
 ### `/determine-market-interest` — Market Validation
@@ -182,6 +197,10 @@ Modify `skills/test/references/test-writer-prompt.md` for test framework prefere
 agentic-tools/
 ├── .claude-plugin/
 │   └── plugin.json
+├── hooks/
+│   ├── hooks.json
+│   ├── scripts/
+│   └── tests/
 ├── skills/
 │   ├── determine-market-interest/
 │   │   ├── SKILL.md
@@ -234,6 +253,12 @@ agentic-tools/
 │   ├── observe/        └── SKILL.md
 │   ├── sandbox/        └── SKILL.md
 │   └── constitution/   └── SKILL.md
+│   │
+│   │   # workflow skills (see "The Workflow Skills" above)
+│   ├── delegate/
+│   ├── review-pr/
+│   ├── validate-install/
+│   └── release/
 ├── CLAUDE.md
 ├── README.md
 └── LICENSE
