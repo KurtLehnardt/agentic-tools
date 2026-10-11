@@ -4,8 +4,9 @@
 # It reports uncommitted changes (staged, unstaged, and untracked files that
 # are not ignored), commits that have not been pushed to the upstream, and a
 # branch with no upstream whose commits exist on no remote. It stays silent
-# about push status when the repository has no remote, and it skips a
-# worktree that has no commits yet (an empty repository). It also looks at
+# about push status when the repository has no remote. On a branch with no
+# commits yet (a fresh git init), it still reports uncommitted files but
+# skips the push status, since there is nothing to push. It also looks at
 # up to ten other worktrees of the same repository, skipping agent worktrees
 # under .claude/worktrees/, and summarizes up to five of them.
 #
@@ -46,12 +47,13 @@ has_remote=0
 # Prints a one-line summary of unsaved work in the worktree at $1, or
 # nothing when the worktree is clean and fully pushed. A single
 # "git status --porcelain=v2 --branch" call supplies the file counts, the
-# branch, its upstream, and the ahead count. A worktree with no commits yet
-# is skipped. A branch without an upstream is only reported when the
-# repository has a remote and the branch has commits that exist on no remote.
+# branch, its upstream, and the ahead count. On a branch with no commits yet
+# only the file counts are reported. A branch without an upstream is only
+# reported when the repository has a remote and the branch has commits that
+# exist on no remote.
 summarize_worktree() {
   local path=$1
-  local status fields oid branch upstream ahead staged unstaged untracked
+  local status fields oid branch upstream ahead staged unstaged untracked unborn=0
   status=$(git -C "$path" status --porcelain=v2 --branch 2>/dev/null) || return 0
   fields=$(printf '%s\n' "$status" | awk '
     $1 == "#" && $2 == "branch.oid" { oid = $3 }
@@ -72,8 +74,9 @@ summarize_worktree() {
   read -r oid branch upstream ahead staged unstaged untracked <<EOF
 $fields
 EOF
-  # An unborn branch has no commits, so there is nothing to compare.
-  [ "$oid" = "(initial)" ] && return 0
+  # An unborn branch has no commits, so there is nothing to push, but its
+  # uncommitted files are still reported.
+  [ "$oid" = "(initial)" ] && unborn=1
   case "$branch" in "(detached)" | "-") branch="" ;; esac
   [ "$upstream" = "-" ] && upstream=""
 
@@ -84,7 +87,7 @@ EOF
   [ -n "$parts" ] && parts="uncommitted changes (${parts#, })"
 
   local push_note="" local_only
-  if [ -n "$branch" ] && [ "$has_remote" -eq 1 ]; then
+  if [ "$unborn" -eq 0 ] && [ -n "$branch" ] && [ "$has_remote" -eq 1 ]; then
     if [ -n "$upstream" ]; then
       [ "${ahead:-0}" -gt 0 ] && push_note="$ahead commit(s) not pushed to $upstream"
     else

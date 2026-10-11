@@ -185,7 +185,7 @@ run_secret_tests() {
   gh_pat="github""_pat_$(rand 30)_$(rand 20)"
   ant="sk-""ant-api03-$(rand 40 'A-Za-z0-9_-')"
   oai="sk-$(rand 48)"
-  oai_proj="sk-""proj-$(rand 40 'A-Za-z0-9_-')"
+  oai_proj="sk-""proj-$(rand 40)"
   stripe="sk""_live_$(rand 24)"
   slack="xo""xb-$(rand_upper 11)-$(rand 24)"
   google="AI""za$(rand 35 'A-Za-z0-9_-')"
@@ -242,6 +242,18 @@ secret: $aws_secret" "AWS secret access key" "$aws_secret"
 
   echo "secret-guard: block output"
   local out
+  # The reason may show the fixed prefix of a key format but no character
+  # after it. The sample values all start with "Ab1" after the prefix.
+  out=$(prompt_json "login with $hf" | bash "$SECRET")
+  case "$out" in
+    *'starts with \"hf_\"'*) case "$out" in *"${hf:0:4}"*) not_ok "hf_ reason shows no character after the prefix" "$out" ;; *) ok "hf_ reason shows no character after the prefix" ;; esac ;;
+    *) not_ok "hf_ reason shows no character after the prefix" "$out" ;;
+  esac
+  out=$(prompt_json "my key is $oai" | bash "$SECRET")
+  case "$out" in
+    *'starts with \"sk-\"'*) case "$out" in *"${oai:0:4}"*) not_ok "legacy sk- reason shows no character after the prefix" "$out" ;; *) ok "legacy sk- reason shows no character after the prefix" ;; esac ;;
+    *) not_ok "legacy sk- reason shows no character after the prefix" "$out" ;;
+  esac
   out=$(prompt_json "use token $gh_tok" | bash "$SECRET")
   case "$out" in
     *'"suppressOriginalPrompt": true'* | *'"suppressOriginalPrompt":true'*)
@@ -278,6 +290,44 @@ secret: $aws_secret" "AWS secret access key" "$aws_secret"
     head -c 1048576 >"$big"
   timed_allow "1MB code paste is scanned in under 2s" "$big" 2000
 
+  big="$work/big2-$AGENTIC_HOOKS_NO_JQ.txt"
+  awk 'BEGIN { for (i = 0; i < 18000; i++) printf "const password = req.body.password; let token = getToken(user.id); // see https://example.com/x?y=%d task-list\n", i }' |
+    head -c 2097152 >"$big"
+  timed_allow "2MB code paste is scanned in under 3s" "$big" 3000
+
+  echo "secret-guard: candidate limits never fail open"
+  # Each of these prompts has more than 5000 decoys for one rule followed by
+  # a real credential. Decoys that fail the cheap checks must not use up the
+  # candidate limit, so the real credential is still found.
+  local lim
+  lim="$work/lim-tasks-$AGENTIC_HOOKS_NO_JQ.txt"
+  awk 'BEGIN { for (i = 0; i < 5200; i++) printf "- [ ] task-%d\n", i }' >"$lim"
+  printf 'my key is %s\n' "$oai" >>"$lim"
+  timed_block "5200 task-N lines then a real sk- key blocks" "$lim" 3000 "OpenAI API key"
+  lim="$work/lim-pw-$AGENTIC_HOOKS_NO_JQ.txt"
+  awk 'BEGIN { for (i = 0; i < 5200; i++) printf "password: ${PW_%d}\n", i }' >"$lim"
+  printf 'password: Hunt3r2!xyz\n' >>"$lim"
+  timed_block "5200 password: \${PW_N} lines then a real password blocks" "$lim" 3000 "password assignment"
+  lim="$work/lim-urls-$AGENTIC_HOOKS_NO_JQ.txt"
+  awk 'BEGIN { for (i = 0; i < 5200; i++) printf "see https://user:x@host%d.local/\n", i }' >"$lim"
+  printf 'connect to postgres://app:%s@db.internal:5432/prod\n' "$db_pw" >>"$lim"
+  timed_block "5200 user:x@ URLs then a real DB URL password blocks" "$lim" 3000 "database URL"
+  lim="$work/lim-tf-$AGENTIC_HOOKS_NO_JQ.txt"
+  awk 'BEGIN { for (i = 0; i < 1700; i++) printf "resource \"aws_s3_bucket\" \"b%d\" {\n  bucket = \"my-bucket-%d\"\n}\n", i, i }' |
+    head -c 84000 >"$lim"
+  printf '\n%s\n' "$aws_secret" >>"$lim"
+  timed_block "84KB Terraform paste with aws_ then a bare AWS secret blocks" "$lim" 3000 "AWS secret access key"
+  # When a limit is reached, the prompt is blocked rather than let through.
+  lim="$work/lim-many-$AGENTIC_HOOKS_NO_JQ.txt"
+  awk 'BEGIN { for (i = 0; i < 5100; i++) printf "token %d: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n", i }' >"$lim"
+  timed_block "5100 plausible placeholder tokens block as too large to scan" "$lim" 3000 "too large to scan fully for secrets"
+  lim="$work/lim-dense-$AGENTIC_HOOKS_NO_JQ.txt"
+  awk 'BEGIN { for (i = 0; i < 400000; i++) printf "sk-a task-b " }' | head -c 4194304 >"$lim"
+  timed_block "4MB single line of dense decoys blocks as too large within 5s" "$lim" 5000 "too large to scan fully for secrets"
+  lim="$work/lim-allow-$AGENTIC_HOOKS_NO_JQ.txt"
+  awk 'BEGIN { print "#allow-secret"; for (i = 0; i < 5100; i++) printf "token %d: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n", i }' >"$lim"
+  timed_allow "#allow-secret allows a prompt that is too large to scan" "$lim" 3000
+
   echo "secret-guard: negative cases"
   expect_allow "AWS docs example key" "set AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE as in the docs"
   expect_allow "AWS docs example secret" "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -302,6 +352,10 @@ secret: $aws_secret" "AWS secret access key" "$aws_secret"
   userPassword = newPassword"
   expect_allow "Supabase publishable key" "NEXT_PUBLIC_SUPABASE_KEY=sb_publishable_$(rand 32)"
   expect_allow "Env secret that references another variable" "API_KEY=\${OPENAI_API_KEY}"
+  expect_allow "Password from \${VAR:-default} expansion" "password=\${MAC_IMAGE_PASSWORD:-admin}"
+  expect_allow "Exported password from \${VAR:-default} expansion" "export password=\${MAC_IMAGE_PASSWORD:-admin}"
+  expect_allow "Password \${VAR:-default} with a mixed default" "PASSWORD=\${MAC_IMAGE_PASSWORD:-adm1n!x}"
+  expect_allow "Password from \${VAR:=default} expansion" "echo \${DB_PASSWORD:=Hunt3r2xyz9}"
   expect_allow "Env token that is a number" "TOKEN_TTL_SECONDS=3600"
   expect_allow "Env secret that is a slug" "SECRET_NAME=prod/app/db-credentials-v2"
   expect_allow "Env secret that is too short" "SECRET_KEY=Ab1cd"
@@ -460,11 +514,22 @@ run_stop_tests() {
     *) ok "local-only repo does not mention a missing upstream" ;;
   esac
 
+  # A fresh repository with no commits (an unborn branch) has nothing to
+  # push, but its uncommitted files are still reported.
   local empty="$base/empty"
   g init -b main "$empty"
-  echo new >"$empty/new.txt"
   out=$(stop_json "$empty" | bash "$STOP"); rc=$?
-  expect_silent "empty repo with no commits is silent" "$out" "$rc"
+  expect_silent "unborn repo with no files is silent" "$out" "$rc"
+  echo new >"$empty/new.txt"
+  echo staged >"$empty/staged.txt"
+  g -C "$empty" add staged.txt
+  g -C "$empty" remote add origin "$base/origin.git"
+  out=$(stop_json "$empty" | bash "$STOP"); rc=$?
+  expect_output "unborn repo with files reports counts" "$out" "$rc" "(main): uncommitted changes (1 staged, 1 untracked)"
+  case "$out" in
+    *"upstream"* | *"not pushed"* | *"remote"*) not_ok "unborn repo has no push note" "$out" ;;
+    *) ok "unborn repo has no push note" ;;
+  esac
 
   # Agent worktrees under .claude/worktrees/ are not listed.
   local many="$base/many"
@@ -553,6 +618,16 @@ run_session_tests() {
     *) not_ok "GIT_SSH_COMMAND is preserved and batch options appended" "ssh log: $(cat "$ssh_log")" ;;
   esac
   g -C "$repo" config --unset core.sshCommand
+
+  # A plain GIT_SSH program, with no ssh command configured, is left alone.
+  : >"$ssh_log"
+  out=$(session_json "$repo" | env -u GIT_SSH_COMMAND GIT_SSH="$fake_ssh" bash "$SESSION"); rc=$?
+  expect_silent "ssh fetch failure with GIT_SSH is silent" "$out" "$rc"
+  case "$(cat "$ssh_log")" in
+    *"BatchMode=yes"*) not_ok "GIT_SSH alone is not overridden" "ssh log: $(cat "$ssh_log")" ;;
+    *fakehost.invalid*) ok "GIT_SSH alone is not overridden" ;;
+    *) not_ok "GIT_SSH alone is not overridden" "GIT_SSH was not used; ssh log: $(cat "$ssh_log")" ;;
+  esac
 
   # A fetch that hangs must be cut off by the timeout fallback.
   local start end

@@ -34,9 +34,13 @@ export GIT_OPTIONAL_LOCKS=0
 # git config), and only append options that stop ssh from prompting or
 # waiting on a slow connection. Options given on the command line apply
 # alongside the user's ~/.ssh/config, so host aliases and keys still work.
-base_ssh=${GIT_SSH_COMMAND:-$(git config --get core.sshCommand 2>/dev/null || echo ssh)}
-[ -z "$base_ssh" ] && base_ssh=ssh
-export GIT_SSH_COMMAND="$base_ssh -o BatchMode=yes -o ConnectTimeout=$FETCH_TIMEOUT"
+# When only GIT_SSH is set, git uses that program, and setting
+# GIT_SSH_COMMAND would override it, so it is left alone. The fetch timeout
+# still applies in that case.
+user_ssh_command=${GIT_SSH_COMMAND:-$(git config --get core.sshCommand 2>/dev/null)}
+if [ -n "$user_ssh_command" ] || [ -z "${GIT_SSH:-}" ]; then
+  export GIT_SSH_COMMAND="${user_ssh_command:-ssh} -o BatchMode=yes -o ConnectTimeout=$FETCH_TIMEOUT"
+fi
 
 branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null)
 upstream=""

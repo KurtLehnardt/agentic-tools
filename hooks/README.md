@@ -18,7 +18,7 @@ When Claude finishes a turn and the working directory is inside a git repository
 - commits that have not been pushed to the branch's upstream,
 - a branch that has no upstream but has commits that exist on no remote, together with the number of those commits.
 
-Push status is only reported when the repository has at least one remote. A purely local repository, or a new branch whose commits are all on a remote already, produces no push warning. A repository with no commits yet is skipped entirely.
+Push status is only reported when the repository has at least one remote. A purely local repository, or a new branch whose commits are all on a remote already, produces no push warning. In a repository with no commits yet (for example right after `git init`), uncommitted files are still reported, but push status is not, because there is nothing to push. An empty new repository with no files produces no message.
 
 It also runs `git worktree list` and checks up to ten other worktrees of the same repository, so the hook stays under a second even when there are many. Agent worktrees whose path contains `/.claude/worktrees/` are skipped, because Claude Code creates and removes those on its own. Up to five worktrees with unsaved work are listed, and any beyond that are summarized as a count.
 
@@ -37,7 +37,7 @@ Because `Stop` fires at the end of every turn, the warning repeats on each turn 
 
 When a session starts or resumes inside a git repository, this hook:
 
-1. Runs `git fetch --quiet --no-tags` for `origin` and, if different, for the upstream remote of the current branch. Each fetch is limited to 5 seconds. The limit uses `timeout` or `gtimeout` when one is installed, and otherwise a background watcher that stops the fetch. Credential prompts are disabled so the fetch can never hang waiting for input. For ssh remotes, the hook keeps your own ssh command, taken from `GIT_SSH_COMMAND` or from `git config core.sshCommand` (plain `ssh` when neither is set), and appends `-o BatchMode=yes -o ConnectTimeout=5`. Your `~/.ssh/config` still applies.
+1. Runs `git fetch --quiet --no-tags` for `origin` and, if different, for the upstream remote of the current branch. Each fetch is limited to 5 seconds. The limit uses `timeout` or `gtimeout` when one is installed, and otherwise a background watcher that stops the fetch. Credential prompts are disabled so the fetch can never hang waiting for input. For ssh remotes, the hook keeps your own ssh command, taken from `GIT_SSH_COMMAND` or from `git config core.sshCommand` (plain `ssh` when neither is set), and appends `-o BatchMode=yes -o ConnectTimeout=5`. Your `~/.ssh/config` still applies. If you use `GIT_SSH` (a program path) and neither `GIT_SSH_COMMAND` nor `core.sshCommand` is set, the hook leaves it alone and does not add the batch options, because setting `GIT_SSH_COMMAND` would replace your program. The fetch time limit still applies in that case.
 2. Compares `HEAD` with its upstream, and with `origin/<default branch>`. The default branch comes from `git symbolic-ref refs/remotes/origin/HEAD`, falling back to `origin/main` and then `origin/master`.
 3. If `HEAD` is behind either one, it adds `additionalContext` telling Claude how many commits the branch is behind and asking it to raise a pull or rebase with the user before starting work. It also shows the user a short `systemMessage`.
 
@@ -55,7 +55,11 @@ Before a prompt reaches Claude, this hook scans its text for likely credentials.
 
 The block output also sets `suppressOriginalPrompt: true` in `hookSpecificOutput`, so Claude Code leaves the prompt text out of the block message instead of ending it with `Original prompt:` and the full text.
 
-The whole scan runs in a single `awk` process, with a cheap literal check in front of every pattern and a cap of 5000 candidate matches per pattern, so a paste of several megabytes is scanned in well under a second. The hook entry sets `"onFailure": "block"`, so if the script crashes or reaches its 10-second timeout, Claude Code blocks the prompt instead of letting it through. That field needs Claude Code v2.1.295 or later; older versions run the hook without it, and a failed or timed-out run then lets the prompt through.
+The whole scan runs in a single `awk` process, with a cheap literal check in front of every pattern. With `jq` installed, a 1 MB paste is scanned in about a third of a second and a 2 MB paste in about half a second. Without `jq`, the hook decodes the JSON input in `awk` as well, which is slower: a 2 MB paste can take about 5 seconds, depending on its content.
+
+Two limits keep the scan bounded on huge or unusual pastes. Each pattern examines at most 5000 plausible candidates, meaning matches that pass the cheap boundary and length checks, and the total amount of text rescanned after matches is capped. The scan never fails open: when either limit is reached, the prompt is blocked with the reason "prompt too large to scan fully for secrets; add #allow-secret if it contains none". In practice this only happens for pastes with thousands of near-miss tokens or multi-megabyte single lines full of candidate prefixes, and the worst case stays around 2 seconds with `jq`.
+
+The hook entry sets `"onFailure": "block"`, so if the script crashes or reaches its 10-second timeout, Claude Code blocks the prompt instead of letting it through. That field needs Claude Code v2.1.295 or later; older versions run the hook without it, and a failed or timed-out run then lets the prompt through. Because of `onFailure: "block"`, a very large paste on a machine without `jq` could reach the 10-second timeout and be blocked even if it contains no credential. Installing `jq` avoids this.
 
 Detected types:
 
@@ -76,12 +80,12 @@ Detected types:
 - Password assignments (`password: ...` or `password=...`) whose value is a literal, either a quoted string or a bare token
 - Environment-style assignments such as `JWT_SECRET=...`, `CI_DEPLOY_TOKEN=...`, or `SUPABASE_SERVICE_ROLE_KEY=...`, where the name contains `SECRET`, `TOKEN`, `API_KEY`, `APIKEY`, `PRIVATE_KEY`, `SERVICE_ROLE`, or `ACCESS_KEY`, and the value is at least 16 characters long and mixes letters and digits like a generated secret
 
-The reason never repeats the secret. It shows only the first four characters of the match, which is the well-known prefix or keyword such as `ghp_` or `post`, and the length of the secret value.
+The reason never repeats the secret. It shows only the fixed, publicly known prefix of the key format, such as `ghp_`, `hf_`, `sk-`, or `postgres://`, and the length of the secret value. It never shows a character that comes after that prefix. For password assignments, environment-style secrets, and AWS secret access keys, it shows only the length.
 
 To keep false positives low, the hook ignores:
 
 - documentation examples and placeholders, such as values containing `EXAMPLE`, `your`, `xxxx`, `placeholder`, `changeme`, `<...>`, or `...`, and values made of very few distinct characters,
-- environment variable references such as `${DB_PASSWORD}` or `os.environ[...]`,
+- environment variable references such as `${DB_PASSWORD}` or `os.environ[...]`, including shell expansions with a default value such as `${MAC_IMAGE_PASSWORD:-admin}` or `${DB_PASSWORD:=admin}`,
 - common local defaults such as `postgres://postgres:postgres@localhost`,
 - `sk-` strings that do not look random, such as URL slugs and hyphenated names like `sk-learn-...`,
 - password values that are code rather than literals, such as `req.body.password`, `hashPassword(input, salt)`, `z.string().min(8)`, or `getpass.getpass()`: anything with parentheses, a member access, or a `req.`, `this.`, `process.env`, or similar prefix,
@@ -96,7 +100,7 @@ What it does not do:
 - It does not scan files, tool output, or anything other than the prompt text.
 - It does not log or store the prompt itself.
 - It does not keep the prompt off disk. Claude Code records every prompt you type in `~/.claude/history.jsonl` (used for up-arrow recall and history search), and a blocked prompt can still appear there and in the session transcript under `~/.claude/projects/`. If you paste a real credential, rotate it. To stop Claude Code from writing transcripts and prompt history, set the `CLAUDE_CODE_SKIP_PROMPT_HISTORY` environment variable.
-- It is a safety net, not a guarantee. Unusual credential formats will not be detected, and a pattern that has more than 5000 decoy matches in one prompt stops being checked after that point.
+- It is a safety net, not a guarantee. Unusual credential formats will not be detected.
 
 ## Disabling hooks
 
@@ -124,4 +128,4 @@ Run the test suite from the repository root:
 bash hooks/tests/run-tests.sh
 ```
 
-The suite pipes sample hook input into each script and checks the exit code and output. The git tests build throwaway repositories under a temporary directory, with a local bare repository acting as `origin`, so they need no network access. The suite runs twice, once with `jq` and once with the built-in fallback parser. It includes timing checks: a paste of about 70KB with 1000 decoy database URLs must be blocked in under 3 seconds, a 1MB code paste must be scanned in under 2 seconds, and the Stop hook must handle 25 worktrees in under a second. Sample credentials are assembled at runtime so that no realistic token appears in the repository.
+The suite pipes sample hook input into each script and checks the exit code and output. The git tests build throwaway repositories under a temporary directory, with a local bare repository acting as `origin`, so they need no network access. The suite runs twice, once with `jq` and once with the built-in fallback parser. It includes timing checks: a paste of about 70KB with 1000 decoy database URLs must be blocked in under 3 seconds, a 1MB code paste must be scanned in under 2 seconds, a 2MB code paste in under 3 seconds, and the Stop hook must handle 25 worktrees in under a second. Regression tests check that thousands of decoys never let a real credential through, and that a prompt which reaches a scan limit is blocked. Sample credentials are assembled at runtime so that no realistic token appears in the repository.

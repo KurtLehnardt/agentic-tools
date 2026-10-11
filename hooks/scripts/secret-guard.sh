@@ -8,21 +8,25 @@
 # is found, the prompt is blocked before it reaches Claude, and the reason
 # names the type of credential that was detected.
 #
-# The reason never repeats the secret. It shows at most the first four
-# characters of the match, which is the non-secret prefix or keyword, and
-# the length of the secret value. The block output also sets
+# The reason never repeats the secret. It shows at most the fixed, publicly
+# known prefix of the key format (for example ghp_ or hf_), never any
+# character after that prefix, and the length of the secret value. The block output also sets
 # suppressOriginalPrompt, so Claude Code leaves the prompt text out of the
 # block message.
 #
 # A prompt that contains the literal text #allow-secret is always allowed.
 # Obvious documentation examples and placeholders are ignored.
 #
-# All scanning happens in a single awk process with no per-match forks, so a
-# multi-megabyte paste is scanned in well under a second. Every rule is
-# guarded by a cheap literal prefilter, long lines are scanned in bounded
-# chunks, and each rule examines at most MAX_MATCHES candidates. The awk
-# program uses only POSIX features (no interval expressions, no gawk
-# extensions), so it runs on the BSD awk in macOS, gawk, mawk, and busybox.
+# All scanning happens in a single awk process with no per-match forks. Every
+# rule is guarded by a cheap literal prefilter, and long lines are scanned in
+# bounded chunks. Two limits keep the scan fast on huge pastes: each rule may
+# examine at most MAXM plausible candidates (matches that pass the cheap
+# boundary and length checks), and the total amount of text rescanned after
+# matches is capped at MAXWORK characters. The scan never fails open: when
+# either limit is reached, the prompt is blocked with a reason asking the
+# user to add #allow-secret if it contains no credentials. The awk program
+# uses only POSIX features (no interval expressions, no gawk extensions), so
+# it runs on the BSD awk in macOS, gawk, mawk, and busybox.
 
 set -u
 
@@ -38,6 +42,8 @@ input=$(cat)
 # The awk program prints nothing when the prompt is clean. Otherwise it
 # prints one line: the detected labels joined by ", ", a tab, and a short
 # description of the first match that never includes the secret itself.
+# When a scan limit was reached and nothing was found, it prints the marker
+# @toolarge instead of the labels.
 read -r -d '' SCANNER <<'AWK'
 function lc(s) { return tolower(s) }
 
@@ -97,55 +103,81 @@ function clean(v) {
   return v
 }
 
-function record(type, label, match_text, value_len, show_prefix) {
+# Records a detection. prefix is the fixed, publicly known prefix of the
+# key format, or "" when nothing about the match may be shown. It must never
+# include a character of the secret itself.
+function record(type, label, prefix, value_len) {
   if (!(label in labels_seen)) {
     labels_seen[label] = 1
     found = (found == "") ? label : found ", " label
   }
   if (first_mask == "") {
     if (type == "private_key") first_mask = "key material follows the header"
-    else if (show_prefix) first_mask = "starts with \"" substr(match_text, 1, 4) "\", secret length " value_len
+    else if (prefix != "") first_mask = "starts with \"" prefix "\", secret length " value_len
     else first_mask = "secret length " value_len
   }
   done[type] = 1
 }
 
+# Returns 1 when the keyword at position p in s is part of a variable name
+# inside a shell expansion such as ${DB_PASSWORD:-admin} or
+# ${API_TOKEN=abc}, which is code rather than a literal.
+function in_expansion(s, p,    from, pre) {
+  from = p - 128; if (from < 1) from = 1
+  pre = substr(s, from, p - from)
+  return (pre ~ /\$\{[A-Za-z0-9_]*$/)
+}
+
 # Checks one candidate match. t is the rule id, m the full match, s the
 # chunk it was found in, p its position in the chunk, prev the character
-# before the chunk.
-function check(t, m, s, p, prev,    v, tail, n, parts, i, seg, ok, after, q, rest, lv) {
+# before the chunk. It sets plaus to 1 when the candidate passed the cheap
+# boundary and length checks, which is what counts toward the MAXM limit.
+function check(t, m, s, p, prev,    v, tail, n, parts, i, ok, after, q, rest, lv, pfx) {
+  plaus = 0
   if (t == "aws_key") {
     if (length(m) < 20) return
+    plaus = 1
     v = substr(m, 1, 20)
     if (is_placeholder(v)) return
-    record(t, "AWS access key ID", m, 20, 1)
+    record(t, "AWS access key ID", substr(m, 1, 4), 20)
   } else if (t == "aws_secret") {
     v = m; sub(/^[^:=]*[:=][ \t]*["']?/, "", v)
-    if (length(v) != 40 || is_placeholder(v)) return
-    record("aws_secret", "AWS secret access key", m, 40, 1)
+    if (length(v) != 40) return
+    plaus = 1
+    if (is_placeholder(v)) return
+    record("aws_secret", "AWS secret access key", "", 40)
   } else if (t == "aws_secret_bare") {
     if (length(m) != 40 || !looks_random(m) || m ~ /=/) return
     if (!boundary_ok(s, p, prev)) return
     after = substr(s, p + length(m), 1)
     if (after ~ /[A-Za-z0-9\/+=]/) return
+    plaus = 1
     if (is_placeholder(m)) return
-    record("aws_secret", "AWS secret access key", m, 40, 0)
+    record("aws_secret", "AWS secret access key", "", 40)
   } else if (t == "github") {
     tail = m; sub(/^gh[pousr]_/, "", tail)
-    if (length(tail) < 36 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record(t, "GitHub token", m, length(tail), 1)
+    if (length(tail) < 36 || !boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record(t, "GitHub token", substr(m, 1, 4), length(tail))
   } else if (t == "github_pat") {
     tail = substr(m, 12)
-    if (length(tail) < 22 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record("github", "GitHub token", m, length(tail), 1)
+    if (length(tail) < 22 || !boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record("github", "GitHub token", "github_pat_", length(tail))
   } else if (t == "gitlab") {
     tail = substr(m, 7)
-    if (length(tail) < 20 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record(t, "GitLab personal access token", m, length(tail), 1)
+    if (length(tail) < 20 || !boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record(t, "GitLab personal access token", "glpat-", length(tail))
   } else if (t == "anthropic") {
     tail = substr(m, 8)
-    if (length(tail) < 20 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record(t, "Anthropic API key", m, length(tail), 1)
+    if (length(tail) < 20 || !boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record(t, "Anthropic API key", "sk-ant-", length(tail))
   } else if (t == "openai") {
     if (m ~ /^sk-ant-/ || !boundary_ok(s, p, prev)) return
     if (m ~ /^sk-(proj|svcacct|admin)-/) {
@@ -153,62 +185,87 @@ function check(t, m, s, p, prev,    v, tail, n, parts, i, seg, ok, after, q, res
       # that may contain - and _. A slug made of short hyphenated words is
       # not a key, so at least one long random-looking segment is required.
       tail = m; sub(/^sk-(proj|svcacct|admin)-/, "", tail)
+      pfx = substr(m, 1, length(m) - length(tail))
       if (length(tail) < 32 || !looks_random(tail)) return
       n = split(tail, parts, /[-_]/); ok = 0
       for (i = 1; i <= n; i++) if (length(parts[i]) >= 16) ok = 1
       if (!ok) return
     } else {
       # Legacy keys are sk- followed by letters and digits only.
-      tail = substr(m, 4)
+      tail = substr(m, 4); pfx = "sk-"
       if (tail !~ /^[A-Za-z0-9]+$/ || length(tail) < 32 || !looks_random(tail)) return
     }
+    plaus = 1
     if (is_placeholder(tail)) return
-    record(t, "OpenAI API key", m, length(tail), 1)
+    record(t, "OpenAI API key", pfx, length(tail))
   } else if (t == "stripe") {
     tail = m; sub(/^(sk|rk)_(live|test)_/, "", tail)
-    if (length(tail) < 10 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record(t, "Stripe secret or restricted key", m, length(tail), 1)
+    if (length(tail) < 10 || !boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record(t, "Stripe secret or restricted key", substr(m, 1, length(m) - length(tail)), length(tail))
   } else if (t == "stripe_whsec") {
     tail = substr(m, 7)
-    if (length(tail) < 24 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record(t, "Stripe webhook signing secret", m, length(tail), 1)
+    if (length(tail) < 24 || !boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record(t, "Stripe webhook signing secret", "whsec_", length(tail))
   } else if (t == "slack") {
     tail = substr(m, 6)
-    if (length(tail) < 10 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record(t, "Slack token", m, length(tail), 1)
+    if (length(tail) < 10 || !boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record(t, "Slack token", substr(m, 1, 5), length(tail))
   } else if (t == "google") {
     tail = substr(m, 5)
-    if (length(tail) < 35 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record(t, "Google API key", m, length(tail), 1)
+    if (length(tail) < 35 || !boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record(t, "Google API key", "AIza", length(tail))
   } else if (t == "nvidia") {
     tail = substr(m, 7)
-    if (length(tail) < 20 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record(t, "NVIDIA API key", m, length(tail), 1)
+    if (length(tail) < 20 || !boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record(t, "NVIDIA API key", "nvapi-", length(tail))
   } else if (t == "huggingface") {
     tail = substr(m, 4)
     if (length(tail) < 30 || tail !~ /[A-Z]/ || tail !~ /[a-z]/) return
-    if (is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record(t, "Hugging Face token", m, length(tail), 1)
+    if (!boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record(t, "Hugging Face token", "hf_", length(tail))
   } else if (t == "supabase") {
     tail = substr(m, 11)
-    if (length(tail) < 20 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
-    record(t, "Supabase secret key", m, length(tail), 1)
+    if (length(tail) < 20 || !boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(tail)) return
+    record(t, "Supabase secret key", "sb_secret_", length(tail))
   } else if (t == "jwt") {
     n = split(m, parts, /\./)
     if (n != 3 || length(parts[1]) < 10 || length(parts[2]) < 10 || length(parts[3]) < 10) return
-    if (is_placeholder(parts[2] parts[3]) || !boundary_ok(s, p, prev)) return
-    record(t, "JWT (for example a Supabase key)", m, length(m), 1)
+    if (!boundary_ok(s, p, prev)) return
+    plaus = 1
+    if (is_placeholder(parts[2] parts[3])) return
+    record(t, "JWT (for example a Supabase key)", "eyJ", length(m))
   } else if (t == "db_url") {
     v = m; sub(/^[^:]*:\/\/[^:]*:/, "", v); sub(/@$/, "", v)
     lv = tolower(v)
     if (lv ~ /^(password|passwd|pass|pw|pwd|secret|postgres|root|admin|user|test|mysql|guest)$/) return
+    # Very short values are still checked, but they do not count toward
+    # the candidate limit, so a long list of user:x@ URLs cannot use it up.
+    if (length(v) >= 6) plaus = 1
     if (is_placeholder(v)) return
-    record(t, "database URL with an inline password", m, length(v), 1)
+    pfx = m; sub(/:\/\/.*$/, "://", pfx)
+    record(t, "database URL with an inline password", pfx, length(v))
   } else if (t == "password" || t == "env_secret") {
     # m runs from the keyword through the separator and any spaces. The
     # value is read from what follows it in the chunk.
     rest = substr(s, p + length(m))
     if (substr(m, length(m), 1) == "=" && substr(rest, 1, 1) == "=") return
+    # A keyword inside a shell expansion such as ${DB_PASSWORD:-admin} is
+    # part of a variable name, and the default after it is code.
+    if (in_expansion(s, p)) return
     q = substr(rest, 1, 1)
     if (q == "\"" || q == "'" || q == "`") {
       rest = substr(rest, 2)
@@ -224,44 +281,52 @@ function check(t, m, s, p, prev,    v, tail, n, parts, i, seg, ok, after, q, res
       # type, so identifier-shaped values need to be long and contain digits.
       if (v ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && (length(v) < 8 || v !~ /[0-9]/)) return
     }
-    if (is_placeholder(v) || is_code_expr(v)) return
+    if (is_code_expr(v)) return
+    if (length(v) < (t == "password" ? 6 : 16)) return
+    plaus = 1
+    if (is_placeholder(v)) return
     if (t == "password") {
       lv = tolower(v)
-      if (length(v) < 6) return
       if (lv ~ /^(true|false|null|none|nil|undefined|required|optional|string|str)$/) return
       # Plain words are usually prose ("password: forgotten"), so require
       # at least one character that is not a letter.
       if (v !~ /[^A-Za-z]/) return
-      record(t, "password assignment", m, length(v), 1)
+      record(t, "password assignment", "", length(v))
     } else {
       # A generic SECRET/TOKEN/API_KEY assignment is only flagged when the
       # value is long and mixes character classes like a generated secret.
-      if (length(v) < 16 || v ~ /:\/\//) return
+      if (v ~ /:\/\//) return
       if (v !~ /[0-9]/ || v !~ /[A-Za-z]/) {
         if (!(v ~ /[A-Z]/ && v ~ /[a-z]/ && length(v) >= 20)) return
       }
       # Lower case words joined by - . or / are slugs and paths.
       if (v ~ /^[a-z0-9._\/-]+$/ && v ~ /[._\/-]/) return
-      record(t, "secret environment variable", m, length(v), 1)
+      record(t, "secret environment variable", "", length(v))
     }
   }
 }
 
 # Runs one rule over a chunk. re is the pattern; when icase is set the
 # match runs against the lower-cased chunk ls and the text is taken from s.
+# After every match the rest of the chunk is copied and searched again, and
+# that copy is what costs time, so its length is added to work. Reaching
+# MAXWORK, or MAXM plausible candidates for one rule, ends the scan and
+# marks the prompt as too large to scan fully, which blocks it.
 function scan(t, re, s, ls, icase, prev,    hay, off, pos, m) {
-  if (t in done || count[t] >= MAXM) return
+  if (toolarge || t in done) return
   hay = icase ? ls : s
   off = 0
-  while (count[t] < MAXM && match(hay, re)) {
+  while (match(hay, re)) {
     pos = off + RSTART
     m = substr(s, pos, RLENGTH)
-    count[t]++
     check(t, m, s, pos, prev)
     if (t in done) return
+    if (plaus && ++count[t] >= MAXM) { toolarge = 1; return }
     off += RSTART + RLENGTH - 1
     if (RLENGTH < 1) off++
     hay = substr(hay, RSTART + (RLENGTH > 0 ? RLENGTH : 1))
+    work += length(hay) + 1
+    if (work >= MAXWORK) { toolarge = 1; return }
   }
 }
 
@@ -275,7 +340,9 @@ function scan_chunk(s, prev,    ls) {
     scan("aws_secret", "aws_?secret(_access)?(_key)?[\"']?[ \t]*[:=][ \t]*[\"']?[a-z0-9/+=]+", s, ls, 1, prev)
     aws_ctx = NR_LINE
   }
-  if (aws_ctx && NR_LINE - aws_ctx <= 3) scan("aws_secret_bare", "[A-Za-z0-9/+=]+", s, ls, 0, prev)
+  # Only runs of 40 or more key characters can be a bare AWS secret, so the
+  # pattern spells out 40 characters instead of matching every word.
+  if (aws_ctx && NR_LINE - aws_ctx <= 3) scan("aws_secret_bare", AWS40, s, ls, 0, prev)
   if (index(s, "gh")) scan("github", "gh[pousr]_[A-Za-z0-9]+", s, ls, 0, prev)
   if (index(s, "github_pat_")) scan("github_pat", "github_pat_[A-Za-z0-9_]+", s, ls, 0, prev)
   if (index(s, "glpat-")) scan("gitlab", "glpat-[A-Za-z0-9_-]+", s, ls, 0, prev)
@@ -301,13 +368,14 @@ function scan_chunk(s, prev,    ls) {
 function scan_line(line,    n, start, chunk, prev, hpos, rest) {
   NR_LINE++
   if (index(line, "#allow-secret")) allowed = 1
+  if (toolarge) return
   # A private key header only counts when key material follows it, so that
   # questions about the PEM format are not blocked.
   if (!("private_key" in done)) {
     if (in_key) {
       if (line !~ /-----/ && line ~ /[A-Za-z0-9+\/=][A-Za-z0-9+\/=][A-Za-z0-9+\/=][A-Za-z0-9+\/=][A-Za-z0-9+\/=]/) {
         rest = line; gsub(/[^A-Za-z0-9+\/=]/, " ", rest)
-        if (longest_run(rest) >= 40) record("private_key", "private key block", key_header, "unknown", 0)
+        if (longest_run(rest) >= 40) record("private_key", "private key block", "", "unknown")
       }
     }
     if (index(line, "PRIVATE KEY-----") && match(line, /-----BEGIN [A-Z ]*PRIVATE KEY-----/)) {
@@ -315,7 +383,7 @@ function scan_line(line,    n, start, chunk, prev, hpos, rest) {
       key_header = substr(line, RSTART, RLENGTH)
       rest = substr(line, RSTART + RLENGTH); gsub(/-----[A-Z ]+-----/, " ", rest)
       gsub(/[^A-Za-z0-9+\/=]/, " ", rest)
-      if (longest_run(rest) >= 40) record("private_key", "private key block", key_header, "unknown", 0)
+      if (longest_run(rest) >= 40) record("private_key", "private key block", "", "unknown")
     }
   }
   n = length(line)
@@ -355,8 +423,12 @@ function decode_prompt(doc,    i, rest, j) {
 }
 
 BEGIN {
-  MAXM = 5000; CHUNK = 4096; OVERLAP = 512
+  MAXM = 5000; MAXWORK = 1000000000; CHUNK = 4096; OVERLAP = 512
   found = ""; first_mask = ""; allowed = 0; NR_LINE = 0; aws_ctx = 0; in_key = 0
+  toolarge = 0; work = 0
+  AWS40 = ""
+  for (k = 0; k < 40; k++) AWS40 = AWS40 "[A-Za-z0-9/+=]"
+  AWS40 = AWS40 "*"
 }
 
 mode == "json" { raw = (NR == 1) ? $0 : raw "\n" $0; next }
@@ -368,7 +440,9 @@ END {
     n = split(text, lines, "\n")
     for (k = 1; k <= n; k++) scan_line(lines[k])
   }
-  if (found != "" && !allowed) printf "%s\t%s\n", found, first_mask
+  if (allowed) exit
+  if (found != "") printf "%s\t%s\n", found, first_mask
+  else if (toolarge) printf "@toolarge\t\n"
 }
 AWK
 
@@ -383,7 +457,11 @@ fi
 found_types=${result%%$'\t'*}
 first_mask=${result#*$'\t'}
 
-reason="Blocked: this prompt appears to contain a credential ($found_types; $first_mask). It was not sent to Claude. If the credential is real, rotate it now, because it may already be in your terminal scrollback, in Claude Code's local prompt history, or in your shell history. Keep secrets in environment variables or your shell profile and refer to them by name instead of pasting them. If this is a false positive, resend the prompt with #allow-secret anywhere in it."
+if [ "$found_types" = "@toolarge" ]; then
+  reason="Blocked: prompt too large to scan fully for secrets; add #allow-secret if it contains none. It was not sent to Claude. The scan stopped early because the prompt has an unusually large number of credential-like candidates, and the hook does not let a prompt through unscanned."
+else
+  reason="Blocked: this prompt appears to contain a credential ($found_types; $first_mask). It was not sent to Claude. If the credential is real, rotate it now, because it may already be in your terminal scrollback, in Claude Code's local prompt history, or in your shell history. Keep secrets in environment variables or your shell profile and refer to them by name instead of pasting them. If this is a false positive, resend the prompt with #allow-secret anywhere in it."
+fi
 
 printf '{"decision": "block", "reason": %s, "hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "suppressOriginalPrompt": true}}\n' \
   "$(json_str "$reason")"
