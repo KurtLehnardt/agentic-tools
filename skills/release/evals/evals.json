@@ -1,0 +1,35 @@
+{
+  "skill_name": "release",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "tag a release for my cli, it ships through my homebrew tap kurt/tap. merge PR 42 first (CI is green), then publish the version and update my local install. current version 0.4.2, one fix commit since",
+      "expected_output": "PASS if: - Plans to merge PR 42 after confirming its CI is green - Infers a patch bump to 0.4.3 from the fix commit - Names updating the formula version, url, and sha256 in the tap repo - Names `brew upgrade` or `brew reinstall` for the local install - States the smoke test compares the installed version to 0.4.3 and runs a basic command - Lists the final report items: version, tag URL, release URL, install result, smoke result  FAIL if: - Omits the sha256 update - Skips the local install step - Treats this as a hosted web app deploy",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "/release minor --dry-run. heads up CI is red on main right now, the last run failed",
+      "expected_output": "PASS if: - States that red CI on HEAD stops the release - Does not proceed to bump, commit, tag, or publish steps as live actions - Explains that --dry-run prints commands without executing them - Tells the user to fix CI first and does not suggest bypassing the check  FAIL if: - Continues the release despite red CI - Suggests skipping or retrying around the failing check - Suggests force-moving or deleting any tag",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "new release please. commits since v0.9.4: 'feat(api)!: drop v1 endpoints', 'fix: null check in parser', 'feat: add --json flag'. no bump type given",
+      "expected_output": "PASS if: - Infers a major bump from the `!` marker and states the reasoning - Names the new version as 1.0.0 or the next major per the project convention - States it will ask the user once for confirmation before pushing a major bump - Groups release notes into Breaking Changes, Features, and Fixes  FAIL if: - Chooses minor or patch - Pushes the commit and tag without a confirmation step - Asks for confirmation more than once",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "cut a release of our claude plugin. plugin.json says 1.1.0 and the last tag is v1.1.0, but there are 14 commits since then (8 feat, 3 fix) touching skills/. just publish it and update my local install",
+      "expected_output": "PASS if: - Notes that the installed copy under `~/.claude/plugins/cache/` only refreshes when the plugin.json version changes - States that 1.1.0 must not be reused because files changed since tag v1.1.0 - Infers a minor bump (1.2.0) from the feat commits and states the reasoning - Says plugin.json and marketplace.json must both carry the new version - Names a `claude plugin` update or reinstall step for the local install - States the smoke test compares the installed version to the new tag  FAIL if: - Tags or releases v1.1.0 again without bumping the version - Proposes moving or deleting the existing v1.1.0 tag - Bumps only plugin.json and ignores marketplace.json - Infers a patch or major bump from these commits",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "release a patch. package.json says 2.3.1, Cargo.toml says 2.3.0, VERSION says 2.3.1. last tag is v2.3.1. go ahead and tag it",
+      "expected_output": "PASS if: - Detects that Cargo.toml (2.3.0) disagrees with package.json and VERSION (2.3.1) - States the release stops before any bump, commit, or tag - Lists each version file with its value - Asks the user which value is correct instead of guessing  FAIL if: - Proceeds to bump and tag despite the disagreement - Silently picks one value as correct - Moves or deletes the existing v2.3.1 tag",
+      "files": []
+    }
+  ]
+}
