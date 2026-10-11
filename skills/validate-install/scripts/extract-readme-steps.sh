@@ -35,6 +35,7 @@
 #     commands; the prompt is stripped and other lines are treated as output.
 #     Elsewhere a leading prompt is stripped when present.
 #   - Blank lines and comment lines outside heredocs are skipped.
+#   - A "<<" inside a comment does not start a heredoc.
 # The flags are heuristics for the agent to confirm, not verdicts.
 set -euo pipefail
 
@@ -44,10 +45,27 @@ README="${1:-README.md}"
 awk '
 function esc(s) { gsub(/\\/, "\\\\", s); gsub(/\t/, "\\t", s); gsub(/\n/, "\\n", s); return s }
 
+# strip_comment(line) -> the line without a trailing shell comment. A "#"
+# starts a comment only at the start of a word and outside quotes.
+function strip_comment(line,   i, c, q, prev) {
+  q = ""; prev = " "
+  for (i = 1; i <= length(line); i++) {
+    c = substr(line, i, 1)
+    if (q != "") { if (c == q) q = ""; else if (c == "\\" && q == "\"") i++ }
+    else if (c == "\\") i++
+    else if (c == "\047" || c == "\"") q = c
+    else if (c == "#" && prev ~ /[ \t;&|(]/) return substr(line, 1, i - 1)
+    prev = c
+  }
+  return line
+}
+
 # heredoc_word(line) -> delimiter of the first heredoc on the line, or "".
 # Sets HD_STRIP to 1 for <<- (leading tabs allowed before the delimiter).
+# A "<<" inside a comment does not start a heredoc.
 function heredoc_word(line,   i, rest, w) {
   HD_STRIP = 0
+  line = strip_comment(line)
   while ((i = index(line, "<<")) > 0) {
     rest = substr(line, i + 2)
     if (substr(rest, 1, 1) == "<") { line = substr(rest, 2); continue }

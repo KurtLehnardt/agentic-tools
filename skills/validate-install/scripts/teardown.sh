@@ -11,7 +11,8 @@
 # --orphans   find every run id carrying the tag key and sweep each one. Runs
 #             whose agentic-tools:expires-at tag is still in the future are
 #             skipped unless --include-active, because they may belong to a
-#             validation another session is running right now.
+#             validation another session is running right now. Expiry tags of
+#             an attempt whose instance is already terminated do not count.
 #
 # Only resources whose tag agentic-tools:validate-install equals the run id
 # are touched (IAM entries must also live under /agentic-tools/validate-install/).
@@ -203,15 +204,28 @@ count_remaining() {  # count_remaining RUN_ID -> prints leftovers, returns count
   echo "$n"
 }
 
-run_expires_at() {  # run_expires_at RUN_ID -> the latest expires-at of any of the run's resources, or empty
+run_expires_at() {  # run_expires_at RUN_ID -> the latest expires-at that still counts for the run, or empty
   # Each attempt tags its resources with its own expiry, so take the maximum:
-  # the run is active while any attempt is still inside its TTL.
-  local id="$1" r q="Tags[?Key=='$EXPIRES_TAG_KEY'].Value[]"
+  # the run is active while any attempt is still inside its TTL. An attempt
+  # whose instance is already terminated is over, so the expiry tags on its
+  # leftover security groups are ignored; otherwise a crashed attempt's
+  # security group would shield the whole run from the sweep until its TTL
+  # ends. A security group whose scope has no terminated instance still
+  # counts, because a provision that is running right now creates the group
+  # before it launches the instance.
+  local id="$1" r dead q="Tags[?Key=='$EXPIRES_TAG_KEY'].Value[]"
   {
     for r in ${REGIONS[@]+"${REGIONS[@]}"}; do
+      dead="$(aws --region "$r" ec2 describe-instances \
+        --filters "Name=tag:$TAG_KEY,Values=$id" "Name=instance-state-name,Values=terminated" \
+        --query "Reservations[].Instances[].Tags[?Key=='$SCOPE_TAG_KEY'].Value[]" --output text 2>/dev/null || true)"
       aws --region "$r" ec2 describe-security-groups --filters "Name=tag:$TAG_KEY,Values=$id" \
-        --query "SecurityGroups[].$q" --output text 2>/dev/null || true
-      aws --region "$r" ec2 describe-instances --filters "Name=tag:$TAG_KEY,Values=$id" \
+        --query "SecurityGroups[].[Tags[?Key=='$SCOPE_TAG_KEY'].Value|[0],Tags[?Key=='$EXPIRES_TAG_KEY'].Value|[0]]" \
+        --output text 2>/dev/null |
+        DEAD="$dead" awk -F'\t' 'BEGIN { n = split(ENVIRON["DEAD"], d, /[ \t\n]+/); for (i = 1; i <= n; i++) if (d[i] != "") dead[d[i]] = 1 }
+          !($1 in dead) { print $2 }' || true
+      aws --region "$r" ec2 describe-instances \
+        --filters "Name=tag:$TAG_KEY,Values=$id" "Name=instance-state-name,Values=pending,running,stopping,stopped,shutting-down" \
         --query "Reservations[].Instances[].$q" --output text 2>/dev/null || true
     done
     # Local (mac) attempts have no AWS tags; read this machine's run.env and scope files.

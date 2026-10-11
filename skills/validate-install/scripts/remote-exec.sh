@@ -9,18 +9,27 @@
 # The step's command text is read verbatim from stdin.
 # Session continuity: a stranger types every step into one terminal, so the
 # working directory and exported variables carry over between steps. On ssh
-# targets the step runs under `bash -il`, an interactive login shell, so the
-# remote shell reads ~/.bash_profile or ~/.profile and also ~/.bashrc. Stock
-# .bashrc files return early when the shell is not interactive, and that early
-# return would drop the PATH lines that installers such as nvm, bun, and rustup
-# append there. Stdin is /dev/null, so an interactive prompt fails fast instead
-# of hanging. Because there is no terminal, bash prints "cannot set terminal
-# process group" and "no job control in this shell" at startup; those two lines
-# are removed from the transcript. The cwd and exports are saved to
-# ~/.vi-session after each step and restored with eval, which works on bash 3.2
-# (stock macOS), where sourcing a process substitution silently does nothing.
-# The script is staged in a mktemp file (mode 600) on the target and removed
-# after the step.
+# targets each step runs in an interactive login shell of the kind a new user
+# gets when they open a terminal: `bash -il` on Linux, and `zsh -il` on macOS,
+# whose default login shell is zsh. Login bash reads ~/.bash_profile or
+# ~/.profile and also ~/.bashrc; stock .bashrc files return early when the
+# shell is not interactive, and that early return would drop the PATH lines
+# that installers such as nvm, bun, and rustup append there. Login zsh reads
+# ~/.zprofile, where Homebrew writes `brew shellenv`, and ~/.zshrc, where bun
+# and nvm write their lines. Stdin is /dev/null, so an interactive prompt
+# fails fast instead of hanging. Because there is no terminal, bash prints
+# "cannot set terminal process group" and "no job control in this shell" at
+# startup; those two lines are removed from the transcript.
+# After each step the cwd, PATH, and exported variables are saved to
+# ~/.vi-session as single-quoted `export NAME='value'` lines, which bash
+# (including bash 3.2 on stock macOS) and zsh both read with `.`. They are
+# listed by awk from its environment, so the format does not depend on the
+# shell's own `export -p` output. On restore the saved PATH comes first, so a
+# directory that an earlier step prepended keeps its precedence; directories
+# that the login files add and that are not already saved are appended.
+# The script is staged in a mktemp file (mode 600) on the target. The script
+# deletes that file as its first action, because the file can hold --pass-env
+# values; the runner also removes it on exit as a backup.
 # On Windows (SSM, PowerShell) the cwd is saved and PATH is reloaded from the
 # registry before each step, which matches opening a new terminal.
 #
@@ -81,33 +90,51 @@ else log "no timeout/gtimeout found; step $STEP runs without a local timeout"; f
 START="$(date +%s)"
 set +e
 if [ "$TRANSPORT" = ssh ]; then
+  # The login shell a new user gets on the target: zsh on macOS, bash elsewhere.
+  RUNNER_SHELL=bash
+  [ "${TARGET:-}" = mac ] && RUNNER_SHELL=zsh
+  # The script file is passed as $1 so that the script can delete it first.
   # shellcheck disable=SC2016  # expands on the remote side
-  REMOTE_RUNNER='f=$(mktemp); cat >"$f"; bash -il "$f" </dev/null; rc=$?; rm -f "$f"; exit $rc'
+  REMOTE_RUNNER='f=$(mktemp) || exit 255; trap '"'"'rm -f "$f"'"'"' EXIT HUP INT TERM; cat >"$f"; '"$RUNNER_SHELL"' -il "$f" "$f" </dev/null; rc=$?; rm -f "$f"; exit $rc'
   {
+    # The harness lines below contain no comments, because they run inside an
+    # interactive shell.
+    cat <<'SELF'
+vi_self="$1"; shift; rm -f "$vi_self"; unset vi_self
+SELF
     for v in ${pass_vars[@]+"${pass_vars[@]}"}; do
       printf "export %s='%s'\n" "$v" "$(printf '%s' "${!v}" | sed "s/'/'\\\\''/g")"
     done
-    printf 'VI_SECRETS=%q\n' "${PASS_ENV//,/ }"
+    printf "VI_SECRETS='%s'\n" "${PASS_ENV//,/ }"
     cat <<'PRE'
 if [ -f ~/.vi-session ]; then
-  vi_path_saved="$(sed -n 's/^VI_PATH=//p' ~/.vi-session)"
-  eval "$(grep -v '^VI_PATH=' ~/.vi-session)" 2>/dev/null
+  VI_PATH=""
+  . ~/.vi-session
   cd "${VI_CWD:-$HOME}" 2>/dev/null || cd "$HOME"
-  [ -n "$vi_path_saved" ] && PATH="$PATH:$vi_path_saved"
+  if [ -n "$VI_PATH" ]; then
+    PATH="$(printf '%s:%s\n' "$VI_PATH" "$PATH" | tr ':' '\n' | awk 'NF && !seen[$0]++' | paste -s -d : -)"
+    export PATH
+  fi
 fi
 PRE
     printf '%s\n' "$CMD"
     cat <<'POST'
 vi_rc=$?
-{
-  printf 'VI_CWD=%q\n' "$PWD"
-  printf 'VI_PATH=%s\n' "$PATH"
-  vi_exports="$(export -p | grep -Ev '^declare -x (PATH|PWD|OLDPWD|SHLVL|_|VI_[A-Z_]+)=')"
-  for vi_s in $VI_SECRETS; do
-    vi_exports="$(printf '%s\n' "$vi_exports" | grep -v "^declare -x $vi_s=")"
-  done
-  printf '%s\n' "$vi_exports"
-} > ~/.vi-session
+VI_CWD="$PWD" VI_PATH="$PATH" VI_SECRETS="$VI_SECRETS" awk '
+function q(s,   o, i) {
+  o = ""
+  while ((i = index(s, "\047")) > 0) { o = o substr(s, 1, i - 1) "\047\\\047\047"; s = substr(s, i + 1) }
+  return "\047" o s "\047"
+}
+BEGIN {
+  n = split(ENVIRON["VI_SECRETS"], sec, " "); for (i = 1; i <= n; i++) skip[sec[i]] = 1
+  n = split("PATH PWD OLDPWD SHLVL _ SHELLOPTS BASHOPTS", sk, " "); for (i = 1; i <= n; i++) skip[sk[i]] = 1
+  printf "VI_CWD=%s\nVI_PATH=%s\n", q(ENVIRON["VI_CWD"]), q(ENVIRON["VI_PATH"])
+  for (k in ENVIRON) {
+    if (k !~ /^[A-Za-z_][A-Za-z0-9_]*$/ || k ~ /^VI_/ || (k in skip)) continue
+    printf "export %s=%s\n", k, q(ENVIRON[k])
+  }
+}' > ~/.vi-session
 exit $vi_rc
 POST
   } | ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} ssh -i "$KEY_FILE" -o BatchMode=yes -o ServerAliveInterval=30 \

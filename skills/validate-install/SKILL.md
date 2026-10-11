@@ -24,7 +24,7 @@ You are an **orchestrator** answering one question: can a stranger clone this re
 
 All helpers live in `scripts/` next to this file. Every script uses `set -euo pipefail` and documents its usage in its header comment.
 
-The agent runs from the user's repo, not from this skill's directory, so always call the helpers by absolute path: `"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/<name>.sh"`, as written in every command below. If `CLAUDE_PLUGIN_ROOT` is empty in the shell, substitute the skill's base directory that was shown when this skill loaded, followed by `/scripts/<name>.sh`. Bash tool calls do not share shell variables, so write the literal run id (and the literal path, if you substituted it) into each command instead of relying on `$RUN_ID` from an earlier call.
+The agent runs from the user's repo, not from this skill's directory, so always call the helpers by absolute path: `"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/<name>.sh"`, as written in every command below. If `CLAUDE_PLUGIN_ROOT` is empty in the shell, substitute the skill's base directory that was shown when this skill loaded, followed by `/scripts/<name>.sh`. Bash tool calls do not share shell variables, so the commands below write the run id as `<run-id>`. Replace it in each command with the literal run id that preflight printed, for example `--run-id vi-20260101120000-abcd`, and also write the literal path if you substituted it. Do not rely on a `$RUN_ID` variable from an earlier call.
 
 ### Long-running commands
 
@@ -75,9 +75,9 @@ Run targets in parallel when there is more than one.
 Run each of these with `run_in_background: true`, as described under "Long-running commands".
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/provision-ec2.sh" --run-id "$RUN_ID" --target linux --distro ubuntu --attempt 1
-"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/provision-ec2.sh" --run-id "$RUN_ID" --target windows --attempt 1
-"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/mac-vm.sh" create --run-id "$RUN_ID" --attempt 1 --memory-gb 8
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/provision-ec2.sh" --run-id <run-id> --target linux --distro ubuntu --attempt 1
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/provision-ec2.sh" --run-id <run-id> --target windows --attempt 1
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/mac-vm.sh" create --run-id <run-id> --attempt 1 --memory-gb 8
 ```
 
 - Linux gets an ephemeral key pair and a security group that allows only tcp/22 from the caller's `/32`. The key is ed25519, except on Arch, where it is RSA 4096 because cloud-init on the Arch images does not accept EC keys.
@@ -93,12 +93,12 @@ If provisioning fails or is interrupted, the script's own trap tears down everyt
 Run each step through `remote-exec.sh`, one call per step, passing the command text verbatim on stdin:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/remote-exec.sh" --run-id "$RUN_ID" --scope linux-a1 --step 3 --timeout 570 <<'STEP'
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/remote-exec.sh" --run-id <run-id> --scope linux-a1 --step 3 --timeout 570 <<'STEP'
 git clone https://github.com/owner/repo && cd repo
 STEP
 ```
 
-The working directory and exported variables persist between steps, as they would in one terminal. On Linux and macOS each step runs in an interactive login bash, so the remote `~/.bashrc` is read and PATH lines that installers such as nvm, bun, and rustup add there take effect in later steps, as they would for a new user who opens a terminal. Every step writes a transcript to `transcripts/<scope>/step-NN.log` containing the command, output, exit code, and duration. Stop a target at its first failing step. Do not improvise extra commands to get past a failure, because that hides the bug a stranger would hit. The only allowed additions are the README's own documented answers to interactive prompts, and the report must name each one.
+The working directory and exported variables persist between steps, as they would in one terminal. Each step runs in the interactive login shell that a new user gets when they open a terminal: `bash -il` on Linux, which reads `~/.profile` or `~/.bash_profile` and `~/.bashrc`, and `zsh -il` on macOS, whose default shell is zsh, which reads `~/.zprofile` (where Homebrew writes `brew shellenv`) and `~/.zshrc` (where bun and nvm write their lines). PATH lines that installers add to these files therefore take effect in later steps, and a README line such as `source ~/.zshrc` runs under zsh as it would for the user. A directory that an earlier step prepended to PATH keeps its precedence in later steps. Every step writes a transcript to `transcripts/<scope>/step-NN.log` containing the command, output, exit code, and duration. Stop a target at its first failing step. Do not improvise extra commands to get past a failure, because that hides the bug a stranger would hit. The only allowed additions are the README's own documented answers to interactive prompts, and the report must name each one.
 
 After the last step, run the README's own "verify" or "usage" command. If the README has none, run the smallest real use of the tool and record that the README lacks a verification step.
 
@@ -108,7 +108,7 @@ Classify each failure as a README bug, a code bug, or an environment problem usi
 
 1. For README and code bugs, fix them on a branch `fix/validate-install-<run-id>` in the repo when it is writable. Otherwise write the proposed patch into the report.
 2. Provision a brand-new machine with the next `--attempt` number and run every step again from step 1. Never reuse the machine that failed.
-3. Tear down the failed attempt's scope right away: `"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/teardown.sh" --run-id "$RUN_ID" --scope linux-a1`.
+3. Tear down the failed attempt's scope right away: `"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/teardown.sh" --run-id <run-id> --scope linux-a1`.
 4. Stop after attempt 3 for any target and report it as FAIL.
 
 Environment problems get a retry with an adjusted run (bigger volume, another region) and are recorded, but they never change the repo.
@@ -143,7 +143,7 @@ Compute cost from actual instance launch and termination times multiplied by the
 Treat Phases 3 through 7 as a `try` block and teardown as its `finally`. Run it on success, on failure, on a blocked step, when the user interrupts, and when you decide to stop early:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/teardown.sh" --run-id "$RUN_ID"
+"${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/teardown.sh" --run-id <run-id>
 ```
 
 It terminates instances and waits for them, then deletes security groups, key pairs, leftover volumes, the IAM instance profile and role, the local VM, and the local private keys. It then re-queries by tag and prints `VERIFIED: 0 resources ... remain`, or lists what remains and exits 1. It is idempotent, so run it again until it verifies. It touches only resources whose run tag equals this run id. The final report must quote the verification line.
@@ -157,7 +157,7 @@ With `--keep`, skip teardown, say that the EC2 TTL still terminates the instance
 "${CLAUDE_PLUGIN_ROOT}/skills/validate-install/scripts/teardown.sh" --orphans --all-regions             # delete it, then verify
 ```
 
-Orphan mode finds every run id carrying the tag key. It skips a run while the latest `expires-at` of any of its attempts is still in the future, because another session may be using it, unless `--include-active` is passed.
+Orphan mode finds every run id carrying the tag key. It skips a run while the latest `expires-at` of any of its attempts is still in the future, because another session may be using it, unless `--include-active` is passed. An attempt whose instance is already terminated is over, so the expiry tags on its leftover resources do not keep the run from being swept.
 
 ## Safety Rules
 
