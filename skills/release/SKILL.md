@@ -1,6 +1,6 @@
 ---
 name: release
-description: "Cut a versioned release end to end: merge PRs, bump every version source, tag, publish a GitHub release, update the local install, and smoke test it. Trigger: cut a release, new release, bump version, publish a version, tag a release, update my local install."
+description: "Cut a versioned release end to end: merge PRs, bump every version source, tag, publish a GitHub release, update the local install, and smoke test it. Trigger: cut a release, new release, bump version, publish a version, tag a release, release and update my local install."
 user-invocable: true
 ---
 
@@ -12,17 +12,21 @@ You are an **orchestrator** that cuts a new version of a versioned artifact (a C
 
 `/release [patch|minor|major|<x.y.z>] [--pr <n>] [--dry-run] [--no-local]`
 
-- `patch`, `minor`, `major`, or an explicit `x.y.z` sets the bump. With none given, infer it from conventional commits since the last tag. Any `feat` means minor, only `fix` means patch, and a `!` after the type or a `BREAKING CHANGE` footer means major. State the reasoning in one short list of the commits that decided it.
+- `patch`, `minor`, `major`, or an explicit `x.y.z` sets the bump. With none given, infer it from conventional commits since the last tag and state the reasoning in one short list of the commits that decided it. Any `feat` means minor, only `fix` means patch, and a `!` after the type or a `BREAKING CHANGE` footer means major. These special cases override the simple rule:
+  - **0.x versions:** while the current version is below 1.0.0, a breaking change means minor instead of major, and other rules stay the same. Moving to 1.0.0 happens only when the user asks for it.
+  - **Only chore, docs, style, test, or ci commits:** the range has no user-facing change. Ask the user whether to release at all, and if they say yes, default to patch.
+  - **Non-conventional history:** if most commit subjects do not follow conventional commits, do not guess from keywords. Ask the user for the bump type. If the user cannot be asked, default to patch and state that reason.
+  - **No prior tag:** this is the first release. Unless the user gave an explicit bump, use the current manifest version as is, without bumping it. If no manifest carries a version, use 0.1.0. Release notes then cover the whole history.
 - `--pr <n>` merges that PR first. Open PRs named in the request are treated the same way.
-- `--dry-run` prints every command that would run and executes none of them.
+- `--dry-run` prints every command that would run and executes none of the mutating ones. Preflight uses only read-only commands. In place of `git pull --ff-only` it runs `git fetch` and compares the local branch with its upstream using `git status -sb` or `git rev-list --count HEAD..@{u}`, and it says that it did so.
 - `--no-local` skips Phase 6 and Phase 7.
 
 ## Safety Rules
 
 - Never move, delete, or force-push an existing tag. If `vX.Y.Z` already exists, stop and report.
-- Stop if CI is red on HEAD. Do not retry around a red check.
+- Stop if any completed check on the HEAD commit failed. Do not retry around a red check. See the CI gate below.
 - Ask the user once before pushing a major bump. Do not ask again for the same release.
-- Under `--dry-run`, run only read-only commands (status, log, view, list) and print the rest.
+- Under `--dry-run`, run only read-only commands (status, log, view, list, fetch) and print the rest. `git fetch` updates only remote-tracking refs and is allowed.
 
 ## Phase 1: PREFLIGHT
 
@@ -30,21 +34,36 @@ You are an **orchestrator** that cuts a new version of a versioned artifact (a C
 git status --porcelain                      # must be empty
 git branch --show-current                   # must equal the default branch
 gh repo view --json defaultBranchRef -q .defaultBranchRef.name
-git pull --ff-only
+git pull --ff-only                          # under --dry-run: git fetch, then compare with upstream instead
 gh auth status
-gh run list --branch <default> --limit 1 --json conclusion,status   # must be success
 git describe --tags --abbrev=0              # last tag, or none for a first release
 ```
 
 If any check fails, stop and report which one. Do not fix a dirty tree or switch branches on the user's behalf.
+
+### CI gate
+
+The CI gate looks at the HEAD commit, not at the latest workflow run on the branch, because the latest run may belong to a different workflow or an older commit. Query both check runs and commit statuses for HEAD:
+
+```bash
+sha=$(git rev-parse HEAD)
+gh api repos/{owner}/{repo}/commits/$sha/check-runs --jq '.check_runs[] | {name, status, conclusion}'
+gh api repos/{owner}/{repo}/commits/$sha/status --jq '.statuses[] | {context, state}'
+```
+
+Rules:
+
+1. Every completed check run must have a conclusion of `success`, `neutral`, or `skipped`. Every commit status must be `success`. Any other completed result stops the release and is reported by name.
+2. If any check run is not completed (`queued` or `in_progress`) or any status is `pending`, wait and poll again. Do not treat pending as green and do not treat it as red.
+3. If HEAD has no check runs and no statuses at all, the repo has no CI for this commit. Warn the user that nothing gates this release. Then run the project's local test command if one exists (`npm test`, `pytest -q`, `cargo test`, `make test`) and proceed only if it passes. If there is no test command either, say so in the report and proceed. Do not block forever on a repo that has no CI.
 
 ## Phase 2: MERGE PRs
 
 Skip this phase when no PR is named.
 
 - If the user wants a review, delegate each PR to the sibling `/review-pr` skill and wait for its merge result.
-- Otherwise require every check on the PR to be green (`gh pr checks <n>`) and merge with `gh pr merge <n> --squash --delete-branch`.
-- After merging, run `git pull --ff-only` and re-run the CI check from Phase 1 on the new HEAD.
+- Otherwise require every check on the PR to be green (`gh pr checks <n>`). Detect the repo's merge convention the same way `/review-pr` does: read the allowed methods from `gh api repos/{owner}/{repo}` (`allow_squash_merge`, `allow_merge_commit`, `allow_rebase_merge`) and compare them with the style of recent history (`git log --merges`, or single-parent commits with PR numbers in the subject for squash). Then merge with `gh pr merge <n> --<method> --delete-branch`. If only one method is allowed, use it. If the signals conflict, prefer what recent history shows.
+- After merging, run `git pull --ff-only` and re-run the CI gate from Phase 1 on the new HEAD. Under `--dry-run`, print these commands and do not run them.
 
 ## Phase 3: DETECT AND BUMP VERSION SOURCES
 
@@ -59,7 +78,7 @@ Dispatch a **general-purpose** subagent to find every place a version lives and 
 Rules:
 
 1. **Agreement check first.** If the sources disagree before the bump, stop and list each file with its value. Do not guess which one is right.
-2. **Plugin staleness check.** For a Claude Code plugin, the installed copy under `~/.claude/plugins/cache/` only refreshes when `plugin.json` version changes. A plugin that changes without a version bump never reaches users. Compare `plugin.json` at the last tag with the current commit. If files changed since the tag, the version must change in this release, and both `plugin.json` and `marketplace.json` must carry the new value.
+2. **Plugin staleness check.** For a Claude Code plugin, the installed copy under `~/.claude/plugins/cache/` only refreshes when `plugin.json` version changes. A plugin that changes without a version bump never reaches users. Compare `plugin.json` at the last tag with the current commit, using `git show <tag>:.claude-plugin/plugin.json`. With no prior tag there is nothing to compare against, so skip the comparison: the first release uses the manifest version as is, and `plugin.json` and `marketplace.json` must already agree on it. Otherwise, if files changed since the tag, the version must change in this release, and both `plugin.json` and `marketplace.json` must carry the new value.
 3. Bump every detected source to the new version in one edit pass. Increment `versionCode` by one. Refresh lockfiles with the project's own tool (`npm install --package-lock-only`, `cargo update -w`).
 4. Re-read every file and confirm all sources now match the new version.
 

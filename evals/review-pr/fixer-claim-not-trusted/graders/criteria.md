@@ -5,9 +5,9 @@ weight: 1
 
 PASS if:
 - Treats the fixer's 'fixed' as an unverified claim
-- Dispatches a fresh critic that refetches the diff and reruns the tests itself
-- Identifies that api/orders.py:77 still lacks a bounds check, so the high finding is still present
-- Sends the finding back for a second fix round because one round remains
+- Dispatches a fresh critic that refetches the diff from the remote branch and reruns the tests itself
+- Marks the prior high finding at api/orders.py:77 as `still present` with its own evidence
+- Sends only that finding back to the fix step for a second round, because the default `--rounds` of 2 leaves one round
 - States that the PR will not merge while a finding at or above `--min` is open
 
 FAIL if:

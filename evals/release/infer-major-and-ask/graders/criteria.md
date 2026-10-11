@@ -5,7 +5,7 @@ weight: 1
 
 PASS if:
 - Infers a major bump from the `!` marker and states the reasoning
-- Names the new version as 1.0.0 or the next major per the project convention
+- Names the new version as 3.0.0
 - States it will ask the user once for confirmation before pushing a major bump
 - Groups release notes into Breaking Changes, Features, and Fixes
 

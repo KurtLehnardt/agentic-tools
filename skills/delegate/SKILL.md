@@ -37,11 +37,11 @@ Two rules apply on top of the table. First, escalate one tier when a worker fail
 4. **One PR per task.** Each worker opens its own PR when its work is done and returns the PR URL.
 5. **Critic review.** For every PR, start an opus critic subagent. The critic reviews the diff, rates each finding by severity, and returns a list.
 6. **Fix.** For each PR with findings at or above the `--min` threshold, start a fix subagent. Size it with the table. It fixes those findings on the same branch and pushes. Nitpicks and findings below the threshold are not fixed.
-7. **Re-review.** The critic reviews the updated PR again. Repeat steps 6 and 7 until no findings remain at or above the threshold. Stop after three rounds and report the PR as blocked rather than looping forever.
+7. **Re-review.** The critic reviews the updated PR again. Repeat steps 6 and 7 until no findings remain at or above the threshold. The round limit is owned by `/review-pr`, whose `--rounds` default is 2. Do not set a different limit here. Pass `--rounds N` to `/review-pr` only when the user asked for a specific number. When the rounds run out with findings still open, report the PR as blocked rather than looping forever.
 8. **Merge.** When CI is green and the review passes, merge the PR and clean up its worktree. Skip this step under `--no-merge`.
 9. **Report.** Give the user a short table with one row per task: PR link, model used, rounds of review, and final status.
 
-The per-PR critique, fix, and merge loop in steps 5 to 8 is specified in detail in `/review-pr`. Use that skill for the loop instead of re-deriving it here. For a final sign-off on large batches, add one opus review at xhigh effort across the merged result.
+The per-PR critique, fix, and merge loop in steps 5 to 8 is specified in detail in `/review-pr`. Use that skill for the loop instead of re-deriving it here. Invoke it with merge intent by passing `--merge` (and `--min` when the user set one), or with `--no-merge` when the user gave `--no-merge` to `/delegate`. `/review-pr` only merges when merge intent is present, so `/delegate` must state it. For a final sign-off on large batches, add one opus review at xhigh effort across the merged result.
 
 ## Autonomy rule
 

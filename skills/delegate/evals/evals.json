@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "delegate this: (1) rename the helper getUsr to getUser across utils.ts, (2) add pagination to the /orders endpoint plus tests, (3) redesign our auth token refresh so it works across the web app, the api and the worker, (4) run the linter and tell me the count. split it up, each in its own worktree, PRs reviewed and merged. dont ask me stuff, just go",
+      "prompt": "delegate this: (1) rename the helper getUsr to getUser across utils.ts, (2) add pagination to the /orders endpoint plus tests, (3) redesign our auth token refresh so it works across the web app, the api and the worker, (4) run the linter and tell me the count. split it up, PRs reviewed and merged. dont ask me stuff, just go",
       "expected_output": "Must: Assigns haiku to task 1 (rename) and task 4 (run linter); Assigns sonnet at high effort to task 2 (pagination plus tests); Assigns opus at high or xhigh effort to task 3 (cross-cutting auth redesign, security-sensitive); Plans one git worktree and one PR per task, run in parallel; Plans an opus critic review of every PR before merge; States that merge happens only when CI and review pass. Must NOT: Assigns haiku to the auth redesign; Assigns a non-opus model to any reviewer role; Plans to implement the tasks itself instead of delegating to subagents; Asks the user clarifying questions before starting.",
       "files": []
     },
@@ -21,7 +21,7 @@
     },
     {
       "id": 4,
-      "prompt": "delegate this: clean up the stale feature branches, upgrade lodash in the 3 services, and fix the flaky date test. some of the branch names are unclear and i wont be around so dont get stuck waiting on me. also one of the services needs a force push to main to fix history",
+      "prompt": "delegate this: clean up the stale feature branches, upgrade lodash in the 3 services, and fix the flaky date test. some of the branch names are unclear and i wont be around. also one of the services needs a force push to main to fix history",
       "expected_output": "Must: States ambiguous choices are decided conservatively with the assumption recorded in the PR description; States no subagent blocks waiting for user input; Identifies the force push to main as destructive or irreversible and pauses that one action for confirmation; States the other tasks keep running while that confirmation is pending; Does not delete branches that hold unmerged work without confirmation. Must NOT: Asks the user to resolve the unclear branch names before any work starts; Performs the force push to main without confirmation; Stops all tasks while waiting for the confirmation.",
       "files": []
     },
@@ -29,6 +29,18 @@
       "id": 5,
       "prompt": "i have a full PRD and an openapi file for a new billing service, 40 requirements. delegate this and make sure every requirement is traced and gated before merge",
       "expected_output": "Must: Says /delegate has no spec ledger and no gates pipeline; Points the user to /build for spec-driven work with a requirements ledger and gates; Does not claim /delegate will trace all 40 requirements. Must NOT: Runs the full /delegate flow while promising per-requirement traceability; Builds its own requirements ledger inside /delegate.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "delegate this: fix the 2 flaky tests and bump the eslint config, one PR each. the critic still has a high finding open on the eslint PR after its first fix round. how many more rounds before you stop on it",
+      "expected_output": "Must: States the round limit is owned by `/review-pr`, whose `--rounds` default is 2; Says one more fix round remains for the eslint PR; Says the PR is reported as blocked, not merged, if the high finding is still open when rounds run out; Says `--rounds` is passed to `/review-pr` only if the user asked for a specific number. Must NOT: States a limit of three rounds; Merges the PR with the high finding still open; Loops without a round limit.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "delegate this: add a CSV export to the /reports endpoint and fix the typo in the footer, one PR each. leave the PRs open, i want to merge them myself",
+      "expected_output": "Must: Maps the request to `--no-merge` and plans to stop after the final review passes; Plans one worktree and one PR per task; Says the PRs stay open for the user and are reported as ready to merge; Says the per-PR loop runs through `/review-pr` with `--no-merge`. Must NOT: Plans to merge either PR; Plans to implement the tasks itself instead of delegating to subagents.",
       "files": []
     }
   ]

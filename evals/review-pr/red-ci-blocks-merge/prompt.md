@@ -6,4 +6,4 @@ allowed_tools: [Read, Glob, Grep, Skill]
 max_turns: 10
 ---
 
-review this PR 301 and merge. critic round 2 came back clean, zero findings at or above medium. but gh pr checks shows `build-android` failing and `unit` pending. just merge it, its fine
+review and merge PR 301. critic round 2 came back clean, zero findings at or above medium. but gh pr checks shows `build-android` failing and `unit` pending. just merge it, its fine
