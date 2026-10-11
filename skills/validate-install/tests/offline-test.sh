@@ -183,6 +183,20 @@ S
 }
 shadow_test bash
 
+# rcfile_test LABEL RCFILE: a directory that an installer appends to the rc file
+# in one step must beat the system binary in the next step.
+rcfile_test() {
+  step 30 <<S
+mkdir -p "\$HOME/shims" && printf '#!/bin/sh\\necho rev-from-shims\\n' > "\$HOME/shims/rev" && chmod +x "\$HOME/shims/rev" && printf 'export PATH="\$HOME/shims:\$PATH"\\n' >> "\$HOME/$2"
+S
+  step 31 <<'S'
+rev
+S
+  case "$STEP_RC:$STEP_OUT" in 0:*rev-from-shims*) ok "$1: PATH added to $2 by an earlier step beats system binaries" ;;
+    *) bad "$1: PATH added to $2 by an earlier step beats system binaries" "$STEP_OUT" ;; esac
+}
+rcfile_test bash .bashrc
+
 # --- remote-exec.sh under zsh (mac target) ---------------------------------------
 if [ -x /bin/zsh ]; then
   SCOPE="mac-a1"
@@ -237,6 +251,7 @@ S
   else ok "zsh: secret never reaches the session file"; fi
 
   shadow_test zsh
+  rcfile_test zsh .zshrc
   unset FAKE_SSH_HOME
   SCOPE="linux-a1"
 else

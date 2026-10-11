@@ -88,7 +88,7 @@ Report in this order: PR number and URL, rounds used, findings fixed (with sever
 
 - Never force-push to `main` or the base branch.
 - Never merge with red or pending CI.
-- Never merge without merge intent (`--merge`, merge/land/ship wording, or a `/delegate` invocation). A plain review request ends at "ready to merge".
+- Never merge without merge intent (`--merge`, an explicit imperative to merge or land this PR only, or a `/delegate` invocation). A plain review request ends at "ready to merge".
 - Never merge a draft or a PR with human changes-requested reviews unless the user said to.
 - Never merge while a finding at or above `--min` is open.
 - Pause for the user only before a destructive or irreversible action outside the PR, such as deleting other branches, a production deploy inside `--then`, or a data migration.

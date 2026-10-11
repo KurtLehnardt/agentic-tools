@@ -61,7 +61,7 @@ Rules:
 
 Skip this phase when no PR is named.
 
-- If the user wants a review, delegate each PR to the sibling `/review-pr <n> --merge` skill and wait for its merge result.
+- If the user wants a review, delegate each PR to the sibling `/review-pr <n> --merge` skill and wait for its merge result. Under `--dry-run`, print this `/review-pr` delegation and do not invoke it.
 - Otherwise require every check on the PR to be green (`gh pr checks <n>`). Detect the repo's merge convention the same way `/review-pr` does: read the allowed methods from `gh api repos/{owner}/{repo}` (`allow_squash_merge`, `allow_merge_commit`, `allow_rebase_merge`) and compare them with the style of recent history (`git log --merges`, or single-parent commits with PR numbers in the subject for squash). Then merge with `gh pr merge <n> --<method> --delete-branch`. If only one method is allowed, use it. If the signals conflict, prefer what recent history shows.
 - After merging, run `git pull --ff-only` and re-run the CI gate from Phase 1 on the new HEAD. Under `--dry-run`, print these commands and do not run them.
 

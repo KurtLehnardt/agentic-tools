@@ -112,7 +112,7 @@ if [ -f ~/.vi-session ]; then
   . ~/.vi-session
   cd "${VI_CWD:-$HOME}" 2>/dev/null || cd "$HOME"
   if [ -n "$VI_PATH" ]; then
-    PATH="$(printf '%s:%s\n' "$VI_PATH" "$PATH" | tr ':' '\n' | awk 'NF && !seen[$0]++' | paste -s -d : -)"
+    PATH="$(VI_A="$VI_PATH" VI_B="$PATH" awk 'BEGIN { n = split(ENVIRON["VI_A"], a, ":"); m = split(ENVIRON["VI_B"], b, ":"); for (i = 1; i <= n; i++) known[a[i]] = 1; for (i = 1; i <= m; i++) if (b[i] != "" && !(b[i] in known) && !seen[b[i]]++) r = r (r == "" ? "" : ":") b[i]; for (i = 1; i <= n; i++) if (a[i] != "" && !seen[a[i]]++) r = r (r == "" ? "" : ":") a[i]; print r }')"
     export PATH
   fi
 fi
