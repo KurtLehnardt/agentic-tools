@@ -25,7 +25,7 @@ You are an **orchestrator** that takes a single pull request from critique to me
 
 ## Merge intent
 
-This skill merges only when merge intent is present. Merge intent is present when the user passes `--merge`, when the request uses words such as merge, land, or ship, or when `/delegate` invoked this skill. A request that only says to review, critique, or check a PR has no merge intent. In that case run the full critique, fix, and re-review loop, wait for CI, and stop with the report line "ready to merge". Do not merge and do not ask whether to merge. The user can re-run with `--merge`. `--no-merge` always wins over any other signal.
+This skill merges only when merge intent is present. Merge intent is present when the user passes `--merge`, when the request uses an explicit request to merge or land this PR (for example "merge it", "land it", "and merge", or "ship it" as an imperative about this PR), or when `/delegate` invoked this skill. A request that only says to review, critique, or check a PR has no merge intent. A phrase like "review PR 12 before I ship" has no merge intent; the request is to review, not to merge. In that case run the full critique, fix, and re-review loop, wait for CI, and stop with the report line "ready to merge". Do not merge and do not ask whether to merge. The user can re-run with `--merge`. `--no-merge` always wins over any other signal.
 
 Severity order, highest first: `critical`, `high`, `medium`, `low`, `nit`. Severity is a category assigned from the failure scenario, not a score. `nit` is always below every valid `--min` value.
 
