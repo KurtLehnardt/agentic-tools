@@ -116,6 +116,68 @@ expect_allow() {
   fi
 }
 
+# Prints the current time in milliseconds. It uses perl or python3 when one
+# is available and otherwise whole seconds from date.
+now_ms() {
+  if command -v perl >/dev/null 2>&1; then
+    perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import time; print(int(time.time() * 1000))'
+  else
+    echo "$(($(date +%s) * 1000))"
+  fi
+}
+
+# Writes hook input JSON whose prompt is the content of file $1 to file $2.
+# The escaping is done by awk so that building a large prompt stays fast and
+# does not depend on jq.
+file_prompt_json() {
+  awk 'BEGIN { printf "{\"session_id\":\"test\",\"hook_event_name\":\"UserPromptSubmit\",\"cwd\":\"/tmp\",\"prompt\":\"" }
+    { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); printf "%s\\n", $0 }
+    END { printf "\"}" }' "$1" >"$2"
+}
+
+# Runs the secret guard on the prompt in file $2 and checks that it blocks
+# with label $4 within $3 milliseconds.
+timed_block() {
+  local name=$1 file=$2 limit=$3 label=$4 start end out
+  file_prompt_json "$file" "$file.json"
+  start=$(now_ms)
+  out=$(bash "$SECRET" <"$file.json")
+  end=$(now_ms)
+  case "$out" in
+    *'"decision": "block"'*"$label"*) ;;
+    *)
+      not_ok "$name" "not blocked: ${out:0:200}"
+      return
+      ;;
+  esac
+  if [ $((end - start)) -lt "$limit" ]; then
+    ok "$name ($((end - start))ms)"
+  else
+    not_ok "$name" "took $((end - start))ms"
+  fi
+}
+
+# Runs the secret guard on the prompt in file $2 and checks that it allows
+# the prompt within $3 milliseconds.
+timed_allow() {
+  local name=$1 file=$2 limit=$3 start end out
+  file_prompt_json "$file" "$file.json"
+  start=$(now_ms)
+  out=$(bash "$SECRET" <"$file.json")
+  end=$(now_ms)
+  if [ -n "$out" ]; then
+    not_ok "$name" "unexpected block: ${out:0:200}"
+    return
+  fi
+  if [ $((end - start)) -lt "$limit" ]; then
+    ok "$name ($((end - start))ms)"
+  else
+    not_ok "$name" "took $((end - start))ms"
+  fi
+}
+
 run_secret_tests() {
   local aws_key gh_tok gh_pat ant oai oai_proj stripe slack google nvidia jwt
   aws_key="AK""IA$(rand_upper 16)"
@@ -157,6 +219,65 @@ $pem_body
   expect_block "Password assignment" "the password=Hunt3r2!xyz for the admin" "password assignment"
   expect_block "Anthropic key is not reported as OpenAI" "key $ant" "Anthropic API key" "$ant"
 
+  local supa whsec hf glpat env_val
+  supa="sb_""secret_$(rand 32 'A-Za-z0-9_-')"
+  whsec="wh""sec_$(rand 32)"
+  hf="h""f_$(rand 34)"
+  glpat="gl""pat-$(rand 20 'A-Za-z0-9_-')"
+  env_val=$(rand 32)
+  expect_block "Bare AWS secret near AWS context" "aws configure gave me these
+$aws_key
+$aws_secret" "AWS secret access key" "$aws_secret"
+  expect_block "Bare AWS secret on its own after an aws line" "my aws creds:
+secret: $aws_secret" "AWS secret access key" "$aws_secret"
+  expect_block "Supabase secret key" "SUPABASE_SECRET=$supa" "Supabase secret key" "$supa"
+  expect_block "Stripe webhook secret" "the webhook secret is $whsec" "Stripe webhook signing secret" "$whsec"
+  expect_block "Hugging Face token" "login with $hf" "Hugging Face token" "$hf"
+  expect_block "GitLab PAT" "git clone https://oauth2:$glpat@gitlab.com/x/y.git" "GitLab personal access token" "$glpat"
+  expect_block "Generic .env SECRET" "JWT_SECRET=$env_val" "secret environment variable" "$env_val"
+  expect_block "Generic .env TOKEN with quotes" "export CI_DEPLOY_TOKEN=\"$env_val\"" "secret environment variable" "$env_val"
+  expect_block "Generic .env SERVICE_ROLE" "SUPABASE_SERVICE_ROLE_KEY = $env_val" "secret environment variable" "$env_val"
+  expect_block "Generic .env PRIVATE_KEY" "APP_PRIVATE_KEY=$env_val" "secret environment variable" "$env_val"
+  expect_block "Quoted password literal" "const password = \"Hunt3r2!xyz\";" "password assignment"
+
+  echo "secret-guard: block output"
+  local out
+  out=$(prompt_json "use token $gh_tok" | bash "$SECRET")
+  case "$out" in
+    *'"suppressOriginalPrompt": true'* | *'"suppressOriginalPrompt":true'*)
+      case "$out" in
+        *'"hookEventName": "UserPromptSubmit"'* | *'"hookEventName":"UserPromptSubmit"'*) ok "block output sets suppressOriginalPrompt" ;;
+        *) not_ok "block output sets suppressOriginalPrompt" "missing hookEventName: $out" ;;
+      esac
+      ;;
+    *) not_ok "block output sets suppressOriginalPrompt" "$out" ;;
+  esac
+  if command -v jq >/dev/null 2>&1; then
+    if printf '%s' "$out" | jq -e '.hookSpecificOutput.suppressOriginalPrompt == true and .decision == "block"' >/dev/null 2>&1; then
+      ok "block output parses with suppressOriginalPrompt true"
+    else
+      not_ok "block output parses with suppressOriginalPrompt true" "$out"
+    fi
+  fi
+
+  echo "secret-guard: performance"
+  local big i real_pw
+  real_pw="Pg$(rand 14)"
+  big="$work/decoys-$AGENTIC_HOOKS_NO_JQ.txt"
+  i=0
+  : >"$big"
+  while [ "$i" -lt 1000 ]; do
+    printf 'line %d DATABASE_URL=postgres://app:postgres@db:5432/app_%d  # local default\n' "$i" "$i"
+    i=$((i + 1))
+  done >>"$big"
+  printf 'and the real one: postgres://app:%s@db.internal:5432/prod\n' "$real_pw" >>"$big"
+  timed_block "~70KB paste with 1000 decoy DB URLs blocks in under 3s" "$big" 3000 "database URL"
+
+  big="$work/big-$AGENTIC_HOOKS_NO_JQ.txt"
+  awk 'BEGIN { for (i = 0; i < 9000; i++) printf "const password = req.body.password; let token = getToken(user.id); // see https://example.com/x?y=%d task-list\n", i }' |
+    head -c 1048576 >"$big"
+  timed_allow "1MB code paste is scanned in under 2s" "$big" 2000
+
   echo "secret-guard: negative cases"
   expect_allow "AWS docs example key" "set AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE as in the docs"
   expect_allow "AWS docs example secret" "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -170,6 +291,23 @@ $pem_body
   expect_allow "PEM question without key material" "how do I parse a -----BEGIN RSA PRIVATE KEY----- header?"
   expect_allow "Ordinary prompt" "refactor the auth module and add tests"
   expect_allow "Plain https URL" "fetch https://example.com/path?x=1"
+
+  echo "secret-guard: code that is not a credential"
+  expect_allow "password from req.body" "const password = req.body.password;"
+  expect_allow "password from a function call" "password = hashPassword(input, salt)"
+  expect_allow "password schema definition" "password: z.string().min(8)"
+  expect_allow "password from getpass" "password=getpass.getpass()"
+  expect_allow "sk- package-style slug" "pip install sk-learn-RandomForestClassifier2"
+  expect_allow "password typed as a variable" "password: String,
+  userPassword = newPassword"
+  expect_allow "Supabase publishable key" "NEXT_PUBLIC_SUPABASE_KEY=sb_publishable_$(rand 32)"
+  expect_allow "Env secret that references another variable" "API_KEY=\${OPENAI_API_KEY}"
+  expect_allow "Env token that is a number" "TOKEN_TTL_SECONDS=3600"
+  expect_allow "Env secret that is a slug" "SECRET_NAME=prod/app/db-credentials-v2"
+  expect_allow "Env secret that is too short" "SECRET_KEY=Ab1cd"
+  expect_allow "Env secret placeholder" "STRIPE_SECRET_KEY=your-stripe-secret-key-here"
+  expect_allow "40-character string without AWS context" "commit message id: $(rand 40 'A-Za-z0-9/+')"
+  expect_allow "Git SHA near AWS context" "aws deploy at commit $(LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 40)"
 
   echo "secret-guard: escape hatch"
   expect_allow "#allow-secret allows a real-looking key" "#allow-secret this is a revoked key $gh_tok"
@@ -276,7 +414,13 @@ run_stop_tests() {
   g -C "$repo" push
   g -C "$repo" checkout -b feature/x
   out=$(stop_json "$repo" | bash "$STOP"); rc=$?
-  expect_output "branch without upstream is reported" "$out" "$rc" "no upstream branch"
+  expect_silent "new branch with no local-only commits is silent" "$out" "$rc"
+
+  echo x >"$repo/x.txt"
+  g -C "$repo" add x.txt
+  g -C "$repo" commit -m x
+  out=$(stop_json "$repo" | bash "$STOP"); rc=$?
+  expect_output "branch without upstream is reported" "$out" "$rc" "no upstream branch (1 commit(s) not on any remote)"
 
   g -C "$repo" checkout main
   g -C "$repo" worktree add -b wt-branch "$base/wt"
@@ -295,6 +439,59 @@ run_stop_tests() {
 
   out=$(stop_json "$repo" | AGENTIC_TOOLS_HOOKS_DISABLE=stop-unsaved-work bash "$STOP"); rc=$?
   expect_silent "disabled via AGENTIC_TOOLS_HOOKS_DISABLE" "$out" "$rc"
+
+  # A repository with commits but no remote has nothing to push to.
+  local solo="$base/solo"
+  g init -b main "$solo"
+  echo one >"$solo/a.txt"
+  g -C "$solo" add a.txt
+  g -C "$solo" commit -m init
+  g -C "$solo" checkout -b feature/local
+  echo two >"$solo/b.txt"
+  g -C "$solo" add b.txt
+  g -C "$solo" commit -m two
+  out=$(stop_json "$solo" | bash "$STOP"); rc=$?
+  expect_silent "local-only repo with no remote is silent" "$out" "$rc"
+  echo dirty >>"$solo/a.txt"
+  out=$(stop_json "$solo" | bash "$STOP"); rc=$?
+  expect_output "local-only repo still reports uncommitted changes" "$out" "$rc" "1 unstaged"
+  case "$out" in
+    *"no upstream"*) not_ok "local-only repo does not mention a missing upstream" "$out" ;;
+    *) ok "local-only repo does not mention a missing upstream" ;;
+  esac
+
+  local empty="$base/empty"
+  g init -b main "$empty"
+  echo new >"$empty/new.txt"
+  out=$(stop_json "$empty" | bash "$STOP"); rc=$?
+  expect_silent "empty repo with no commits is silent" "$out" "$rc"
+
+  # Agent worktrees under .claude/worktrees/ are not listed.
+  local many="$base/many"
+  make_repo "$many"
+  echo ".claude/" >>"$many/clone/.git/info/exclude"
+  g -C "$many/clone" worktree add -b agent-1 "$many/clone/.claude/worktrees/agent-1"
+  echo dirty >"$many/clone/.claude/worktrees/agent-1/d.txt"
+  out=$(stop_json "$many/clone" | bash "$STOP"); rc=$?
+  expect_silent "dirty agent worktree under .claude/worktrees/ is skipped" "$out" "$rc"
+
+  # Many dirty sibling worktrees: the scan is capped and stays fast.
+  local n=0
+  while [ "$n" -lt 25 ]; do
+    g -C "$many/clone" worktree add -b "wt-$n" "$many/wt-$n"
+    echo dirty >"$many/wt-$n/d.txt"
+    n=$((n + 1))
+  done
+  local start_ms end_ms
+  start_ms=$(now_ms)
+  out=$(stop_json "$many/clone" | bash "$STOP"); rc=$?
+  end_ms=$(now_ms)
+  expect_output "25 dirty worktrees are summarized" "$out" "$rc" "Other worktrees" "and 5 more worktree(s)"
+  if [ $((end_ms - start_ms)) -lt 1000 ]; then
+    ok "25 worktrees scanned in under 1s ($((end_ms - start_ms))ms)"
+  else
+    not_ok "25 worktrees scanned in under 1s" "$((end_ms - start_ms))ms"
+  fi
 }
 
 run_session_tests() {
@@ -335,6 +532,27 @@ run_session_tests() {
 
   out=$(session_json "$work" | bash "$SESSION"); rc=$?
   expect_silent "non-git directory is silent" "$out" "$rc"
+
+  # The user's core.sshCommand must be kept, with the batch options added.
+  local fake_ssh="$base/fake-ssh" ssh_log="$base/ssh.log"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s"\nexit 255\n' "$ssh_log" >"$fake_ssh"
+  chmod +x "$fake_ssh"
+  g -C "$repo" remote set-url origin "git@fakehost.invalid:org/repo.git"
+  g -C "$repo" config core.sshCommand "$fake_ssh -o UserOption=kept"
+  : >"$ssh_log"
+  out=$(session_json "$repo" | env -u GIT_SSH_COMMAND bash "$SESSION"); rc=$?
+  expect_silent "ssh fetch failure is silent" "$out" "$rc"
+  case "$(cat "$ssh_log")" in
+    *"UserOption=kept"*"BatchMode=yes"*"ConnectTimeout="*) ok "core.sshCommand is preserved and batch options appended" ;;
+    *) not_ok "core.sshCommand is preserved and batch options appended" "ssh log: $(cat "$ssh_log")" ;;
+  esac
+  : >"$ssh_log"
+  out=$(session_json "$repo" | GIT_SSH_COMMAND="$fake_ssh -o EnvOption=kept" bash "$SESSION"); rc=$?
+  case "$(cat "$ssh_log")" in
+    *"EnvOption=kept"*"BatchMode=yes"*) ok "GIT_SSH_COMMAND is preserved and batch options appended" ;;
+    *) not_ok "GIT_SSH_COMMAND is preserved and batch options appended" "ssh log: $(cat "$ssh_log")" ;;
+  esac
+  g -C "$repo" config --unset core.sshCommand
 
   # A fetch that hangs must be cut off by the timeout fallback.
   local start end

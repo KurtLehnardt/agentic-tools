@@ -3,8 +3,11 @@
 #
 # It reports uncommitted changes (staged, unstaged, and untracked files that
 # are not ignored), commits that have not been pushed to the upstream, and a
-# current branch that has no upstream at all. It also looks at the other
-# worktrees of the same repository and summarizes up to five of them.
+# branch with no upstream whose commits exist on no remote. It stays silent
+# about push status when the repository has no remote, and it skips a
+# worktree that has no commits yet (an empty repository). It also looks at
+# up to ten other worktrees of the same repository, skipping agent worktrees
+# under .claude/worktrees/, and summarizes up to five of them.
 #
 # This hook only warns. It never blocks the stop, never asks Claude to keep
 # working, never touches the network, and always exits 0.
@@ -32,46 +35,62 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 export GIT_OPTIONAL_LOCKS=0
 
 MAX_REPORTED_WORKTREES=5
-MAX_SCANNED_WORKTREES=20
+# Each sibling worktree costs one or two git processes, so the scan stops
+# after this many to keep the hook well under a second.
+MAX_SCANNED_WORKTREES=10
+
+# Without a remote nothing can be pushed, so push status is not reported.
+has_remote=0
+[ -n "$(git remote 2>/dev/null)" ] && has_remote=1
 
 # Prints a one-line summary of unsaved work in the worktree at $1, or
-# nothing when the worktree is clean and fully pushed. When $2 is "current",
-# a branch without an upstream is always reported. For other worktrees it
-# is only reported when that branch has commits that exist on no remote.
+# nothing when the worktree is clean and fully pushed. A single
+# "git status --porcelain=v2 --branch" call supplies the file counts, the
+# branch, its upstream, and the ahead count. A worktree with no commits yet
+# is skipped. A branch without an upstream is only reported when the
+# repository has a remote and the branch has commits that exist on no remote.
 summarize_worktree() {
-  local path=$1 mode=$2
-  local counts staged unstaged untracked
-  counts=$(git -C "$path" status --porcelain=v1 2>/dev/null | awk '
-    { x = substr($0, 1, 1); y = substr($0, 2, 1)
-      if (x == "?" && y == "?") u++
-      else { if (x != " ") s++; if (y != " ") m++ } }
-    END { print s + 0, m + 0, u + 0 }') || return 0
-  read -r staged unstaged untracked <<EOF
-$counts
+  local path=$1
+  local status fields oid branch upstream ahead staged unstaged untracked
+  status=$(git -C "$path" status --porcelain=v2 --branch 2>/dev/null) || return 0
+  fields=$(printf '%s\n' "$status" | awk '
+    $1 == "#" && $2 == "branch.oid" { oid = $3 }
+    $1 == "#" && $2 == "branch.head" { head = $3 }
+    $1 == "#" && $2 == "branch.upstream" { up = $3 }
+    $1 == "#" && $2 == "branch.ab" { ahead = substr($3, 2) }
+    $1 == "1" || $1 == "2" {
+      x = substr($2, 1, 1); y = substr($2, 2, 1)
+      if (x != ".") s++
+      if (y != ".") m++
+    }
+    $1 == "u" { m++ }
+    $1 == "?" { u++ }
+    END {
+      printf "%s %s %s %s %d %d %d\n", (oid == "" ? "-" : oid), (head == "" ? "-" : head),
+        (up == "" ? "-" : up), (ahead == "" ? 0 : ahead), s, m, u
+    }')
+  read -r oid branch upstream ahead staged unstaged untracked <<EOF
+$fields
 EOF
-  staged=${staged:-0}
-  unstaged=${unstaged:-0}
-  untracked=${untracked:-0}
+  # An unborn branch has no commits, so there is nothing to compare.
+  [ "$oid" = "(initial)" ] && return 0
+  case "$branch" in "(detached)" | "-") branch="" ;; esac
+  [ "$upstream" = "-" ] && upstream=""
 
   local parts=""
-  [ "$staged" -gt 0 ] && parts="$parts, $staged staged"
-  [ "$unstaged" -gt 0 ] && parts="$parts, $unstaged unstaged"
-  [ "$untracked" -gt 0 ] && parts="$parts, $untracked untracked"
+  [ "${staged:-0}" -gt 0 ] && parts="$parts, $staged staged"
+  [ "${unstaged:-0}" -gt 0 ] && parts="$parts, $unstaged unstaged"
+  [ "${untracked:-0}" -gt 0 ] && parts="$parts, $untracked untracked"
   [ -n "$parts" ] && parts="uncommitted changes (${parts#, })"
 
-  local branch upstream ahead push_note=""
-  branch=$(git -C "$path" symbolic-ref --quiet --short HEAD 2>/dev/null)
-  if [ -n "$branch" ]; then
-    upstream=$(git -C "$path" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)
+  local push_note="" local_only
+  if [ -n "$branch" ] && [ "$has_remote" -eq 1 ]; then
     if [ -n "$upstream" ]; then
-      ahead=$(git -C "$path" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
       [ "${ahead:-0}" -gt 0 ] && push_note="$ahead commit(s) not pushed to $upstream"
     else
-      local local_only
-      local_only=$(git -C "$path" rev-list --count HEAD --not --remotes 2>/dev/null || echo 0)
-      if [ "$mode" = "current" ] || [ "${local_only:-0}" -gt 0 ]; then
+      local_only=$(git -C "$path" rev-list --count HEAD --not --remotes 2>/dev/null)
+      [ "${local_only:-0}" -gt 0 ] &&
         push_note="no upstream branch ($local_only commit(s) not on any remote)"
-      fi
     fi
   fi
 
@@ -87,23 +106,24 @@ current_top=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 current_real=$(cd "$current_top" && pwd -P)
 
 message=""
-current_summary=$(summarize_worktree "$current_top" current)
+current_summary=$(summarize_worktree "$current_top")
 [ -n "$current_summary" ] && message="Unsaved git work in $current_summary"
 
 # Collect the other worktrees of this repository. Bare and missing
-# worktrees are skipped.
+# worktrees are skipped, and so are agent worktrees under .claude/worktrees/,
+# which Claude Code creates and cleans up on its own.
 others=""
 other_count=0
 scanned=0
 while IFS= read -r wt; do
   [ -z "$wt" ] && continue
+  case "$wt" in */.claude/worktrees/*) continue ;; esac
   [ -d "$wt" ] || continue
   wt_real=$(cd "$wt" 2>/dev/null && pwd -P) || continue
   [ "$wt_real" = "$current_real" ] && continue
-  [ "$(git -C "$wt" rev-parse --is-bare-repository 2>/dev/null)" = "true" ] && continue
   scanned=$((scanned + 1))
   [ "$scanned" -gt "$MAX_SCANNED_WORKTREES" ] && break
-  line=$(summarize_worktree "$wt" other)
+  line=$(summarize_worktree "$wt")
   [ -z "$line" ] && continue
   other_count=$((other_count + 1))
   if [ "$other_count" -le "$MAX_REPORTED_WORKTREES" ]; then
@@ -111,7 +131,10 @@ while IFS= read -r wt; do
   - $line"
   fi
 done <<EOF
-$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+$(git worktree list --porcelain 2>/dev/null | awk '
+  /^worktree / { if (path != "" && !bare) print path; path = substr($0, 10); bare = 0; next }
+  /^bare$/ { bare = 1 }
+  END { if (path != "" && !bare) print path }')
 EOF
 
 if [ "$other_count" -gt 0 ]; then

@@ -1,18 +1,28 @@
 #!/usr/bin/env bash
 # UserPromptSubmit hook: blocks a prompt that appears to contain a credential.
 #
-# The prompt is scanned for well-known key formats (AWS, GitHub, Anthropic,
-# OpenAI, Stripe, Slack, Google, NVIDIA), private key blocks, JWTs such as
-# Supabase keys, database URLs with an inline password, and password
-# assignments. When one is found, the prompt is blocked before it reaches
-# Claude, and the reason names the type of credential that was detected.
+# The prompt is scanned for well-known key formats (AWS, GitHub, GitLab,
+# Anthropic, OpenAI, Stripe, Slack, Google, NVIDIA, Hugging Face, Supabase),
+# private key blocks, JWTs, database URLs with an inline password, password
+# assignments, and secret-looking environment variable assignments. When one
+# is found, the prompt is blocked before it reaches Claude, and the reason
+# names the type of credential that was detected.
 #
 # The reason never repeats the secret. It shows at most the first four
 # characters of the match, which is the non-secret prefix or keyword, and
-# the length of the secret value.
+# the length of the secret value. The block output also sets
+# suppressOriginalPrompt, so Claude Code leaves the prompt text out of the
+# block message.
 #
 # A prompt that contains the literal text #allow-secret is always allowed.
 # Obvious documentation examples and placeholders are ignored.
+#
+# All scanning happens in a single awk process with no per-match forks, so a
+# multi-megabyte paste is scanned in well under a second. Every rule is
+# guarded by a cheap literal prefilter, long lines are scanned in bounded
+# chunks, and each rule examines at most MAX_MATCHES candidates. The awk
+# program uses only POSIX features (no interval expressions, no gawk
+# extensions), so it runs on the BSD awk in macOS, gawk, mawk, and busybox.
 
 set -u
 
@@ -23,160 +33,358 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 hook_disabled secret-guard && exit 0
 
 input=$(cat)
-if have_jq; then
-  prompt=$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null)
-else
-  # Without jq the raw JSON is scanned. Escaped newlines appear as the two
-  # characters \n, which the patterns below tolerate.
-  prompt=$input
-fi
+[ -z "$input" ] && exit 0
 
-[ -z "$prompt" ] && exit 0
+# The awk program prints nothing when the prompt is clean. Otherwise it
+# prints one line: the detected labels joined by ", ", a tab, and a short
+# description of the first match that never includes the secret itself.
+read -r -d '' SCANNER <<'AWK'
+function lc(s) { return tolower(s) }
 
-case "$prompt" in
-  *"#allow-secret"*) exit 0 ;;
-esac
-
-lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
-
-# Returns success when the value looks like a placeholder or an example
-# rather than a real secret.
-is_placeholder() {
-  local v l
-  v=$1
-  l=$(lower "$v")
-  case "$l" in
-    *example* | *your* | *xxxx* | *placeholder* | *redacted* | *changeme* | \
-      *dummy* | *fake* | *sample* | *here* | *insert* | *replace* | \
-      *"<"* | *">"* | *"..."* | *"***"* | *"…"*)
-      return 0
-      ;;
-  esac
-  case "$v" in
-    '$'* | '{'* | '%'*) return 0 ;;
-  esac
+# Returns 1 when the value looks like a placeholder or an example rather
+# than a real secret.
+function is_placeholder(v,    l, n, i, c, seen, distinct) {
+  l = tolower(v)
+  if (l ~ /example|your|xxxx|placeholder|redacted|changeme|dummy|fake|sample|here|insert|replace|<|>|\.\.\.|\*\*\*/) return 1
+  if (index(v, "\342\200\246")) return 1
+  c = substr(v, 1, 1)
+  if (c == "$" || c == "{" || c == "%") return 1
   # A value made of very few distinct characters, such as aaaaaaaa or
-  # 0000-0000, is a placeholder.
-  local distinct
-  distinct=$(printf '%s' "$v" | fold -w1 | sort -u | wc -l | tr -d ' ')
-  [ "${distinct:-0}" -lt 6 ] && return 0
+  # 0000-0000, is a placeholder. Only the first 64 characters are counted.
+  n = length(v); if (n > 64) n = 64
+  distinct = 0
+  for (i = 1; i <= n; i++) {
+    c = substr(v, i, 1)
+    if (!(c in seen)) { seen[c] = 1; distinct++; if (distinct >= 6) return 0 }
+  }
   return 1
 }
 
-# Returns success when the value contains an upper case letter, a lower
-# case letter, and a digit, which random API keys almost always do.
-looks_random() {
-  case "$1" in *[A-Z]*) ;; *) return 1 ;; esac
-  case "$1" in *[a-z]*) ;; *) return 1 ;; esac
-  case "$1" in *[0-9]*) ;; *) return 1 ;; esac
+# Returns 1 when the value has an upper case letter, a lower case letter,
+# and a digit, which random API keys almost always do.
+function looks_random(v) {
+  return (v ~ /[A-Z]/ && v ~ /[a-z]/ && v ~ /[0-9]/)
+}
+
+# Returns 1 when the value reads like code rather than a literal: a call,
+# a member access such as req.body.password, or a reference to the
+# environment or to configuration.
+function is_code_expr(v,    l) {
+  if (v ~ /[()]/) return 1
+  if (v ~ /^[A-Za-z_$][A-Za-z0-9_$]*(\.|->|::)[A-Za-z_$]/) return 1
+  if (v ~ /^[$%{[@]/) return 1
+  l = tolower(v)
+  if (l ~ /^(req|request|this|self|process|os|env|config|cfg|settings|params|args|opts|options|props|ctx|data|form|input|body|user|values)[.\[]/) return 1
+  if (l ~ /getenv|environ|process\.env|secrets\.|vault/) return 1
   return 0
 }
 
-# Extra checks for types where the bare pattern is too loose. The first
-# argument is the type id, the second the extracted secret value.
-passes_type_check() {
-  local type=$1 v=$2 l
-  case "$type" in
-    openai)
-      case "$v" in sk-ant-*) return 1 ;; esac
-      looks_random "${v#sk-}" || return 1
-      ;;
-    db_url)
-      l=$(lower "$v")
-      case "$l" in
-        password | passwd | pass | pw | pwd | secret | postgres | root | admin | user | test) return 1 ;;
-      esac
-      ;;
-    password)
-      l=$(lower "$v")
-      [ "${#v}" -lt 6 ] && return 1
-      case "$l" in
-        *env* | *secret* | *vault* | *process.* | *os.* | *config* | \
-          true | false | null | none | required | optional) return 1 ;;
-      esac
+# Returns 1 when the character before position pos in s can start a token,
+# so that a prefix such as sk- inside a longer word such as task-list is not
+# treated as a key.
+function boundary_ok(s, pos, abs_prev,    c) {
+  if (pos > 1) c = substr(s, pos - 1, 1)
+  else c = abs_prev
+  return (c !~ /[A-Za-z0-9]/)
+}
+
+# Strips matching quotes and trailing punctuation from a value.
+function clean(v) {
+  sub(/[,;]+$/, "", v)
+  if (v ~ /^["'`]/) v = substr(v, 2)
+  if (v ~ /["'`]$/) v = substr(v, 1, length(v) - 1)
+  sub(/[,;]+$/, "", v)
+  return v
+}
+
+function record(type, label, match_text, value_len, show_prefix) {
+  if (!(label in labels_seen)) {
+    labels_seen[label] = 1
+    found = (found == "") ? label : found ", " label
+  }
+  if (first_mask == "") {
+    if (type == "private_key") first_mask = "key material follows the header"
+    else if (show_prefix) first_mask = "starts with \"" substr(match_text, 1, 4) "\", secret length " value_len
+    else first_mask = "secret length " value_len
+  }
+  done[type] = 1
+}
+
+# Checks one candidate match. t is the rule id, m the full match, s the
+# chunk it was found in, p its position in the chunk, prev the character
+# before the chunk.
+function check(t, m, s, p, prev,    v, tail, n, parts, i, seg, ok, after, q, rest, lv) {
+  if (t == "aws_key") {
+    if (length(m) < 20) return
+    v = substr(m, 1, 20)
+    if (is_placeholder(v)) return
+    record(t, "AWS access key ID", m, 20, 1)
+  } else if (t == "aws_secret") {
+    v = m; sub(/^[^:=]*[:=][ \t]*["']?/, "", v)
+    if (length(v) != 40 || is_placeholder(v)) return
+    record("aws_secret", "AWS secret access key", m, 40, 1)
+  } else if (t == "aws_secret_bare") {
+    if (length(m) != 40 || !looks_random(m) || m ~ /=/) return
+    if (!boundary_ok(s, p, prev)) return
+    after = substr(s, p + length(m), 1)
+    if (after ~ /[A-Za-z0-9\/+=]/) return
+    if (is_placeholder(m)) return
+    record("aws_secret", "AWS secret access key", m, 40, 0)
+  } else if (t == "github") {
+    tail = m; sub(/^gh[pousr]_/, "", tail)
+    if (length(tail) < 36 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record(t, "GitHub token", m, length(tail), 1)
+  } else if (t == "github_pat") {
+    tail = substr(m, 12)
+    if (length(tail) < 22 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record("github", "GitHub token", m, length(tail), 1)
+  } else if (t == "gitlab") {
+    tail = substr(m, 7)
+    if (length(tail) < 20 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record(t, "GitLab personal access token", m, length(tail), 1)
+  } else if (t == "anthropic") {
+    tail = substr(m, 8)
+    if (length(tail) < 20 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record(t, "Anthropic API key", m, length(tail), 1)
+  } else if (t == "openai") {
+    if (m ~ /^sk-ant-/ || !boundary_ok(s, p, prev)) return
+    if (m ~ /^sk-(proj|svcacct|admin)-/) {
+      # Project, service account, and admin keys are long random strings
+      # that may contain - and _. A slug made of short hyphenated words is
+      # not a key, so at least one long random-looking segment is required.
+      tail = m; sub(/^sk-(proj|svcacct|admin)-/, "", tail)
+      if (length(tail) < 32 || !looks_random(tail)) return
+      n = split(tail, parts, /[-_]/); ok = 0
+      for (i = 1; i <= n; i++) if (length(parts[i]) >= 16) ok = 1
+      if (!ok) return
+    } else {
+      # Legacy keys are sk- followed by letters and digits only.
+      tail = substr(m, 4)
+      if (tail !~ /^[A-Za-z0-9]+$/ || length(tail) < 32 || !looks_random(tail)) return
+    }
+    if (is_placeholder(tail)) return
+    record(t, "OpenAI API key", m, length(tail), 1)
+  } else if (t == "stripe") {
+    tail = m; sub(/^(sk|rk)_(live|test)_/, "", tail)
+    if (length(tail) < 10 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record(t, "Stripe secret or restricted key", m, length(tail), 1)
+  } else if (t == "stripe_whsec") {
+    tail = substr(m, 7)
+    if (length(tail) < 24 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record(t, "Stripe webhook signing secret", m, length(tail), 1)
+  } else if (t == "slack") {
+    tail = substr(m, 6)
+    if (length(tail) < 10 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record(t, "Slack token", m, length(tail), 1)
+  } else if (t == "google") {
+    tail = substr(m, 5)
+    if (length(tail) < 35 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record(t, "Google API key", m, length(tail), 1)
+  } else if (t == "nvidia") {
+    tail = substr(m, 7)
+    if (length(tail) < 20 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record(t, "NVIDIA API key", m, length(tail), 1)
+  } else if (t == "huggingface") {
+    tail = substr(m, 4)
+    if (length(tail) < 30 || tail !~ /[A-Z]/ || tail !~ /[a-z]/) return
+    if (is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record(t, "Hugging Face token", m, length(tail), 1)
+  } else if (t == "supabase") {
+    tail = substr(m, 11)
+    if (length(tail) < 20 || is_placeholder(tail) || !boundary_ok(s, p, prev)) return
+    record(t, "Supabase secret key", m, length(tail), 1)
+  } else if (t == "jwt") {
+    n = split(m, parts, /\./)
+    if (n != 3 || length(parts[1]) < 10 || length(parts[2]) < 10 || length(parts[3]) < 10) return
+    if (is_placeholder(parts[2] parts[3]) || !boundary_ok(s, p, prev)) return
+    record(t, "JWT (for example a Supabase key)", m, length(m), 1)
+  } else if (t == "db_url") {
+    v = m; sub(/^[^:]*:\/\/[^:]*:/, "", v); sub(/@$/, "", v)
+    lv = tolower(v)
+    if (lv ~ /^(password|passwd|pass|pw|pwd|secret|postgres|root|admin|user|test|mysql|guest)$/) return
+    if (is_placeholder(v)) return
+    record(t, "database URL with an inline password", m, length(v), 1)
+  } else if (t == "password" || t == "env_secret") {
+    # m runs from the keyword through the separator and any spaces. The
+    # value is read from what follows it in the chunk.
+    rest = substr(s, p + length(m))
+    if (substr(m, length(m), 1) == "=" && substr(rest, 1, 1) == "=") return
+    q = substr(rest, 1, 1)
+    if (q == "\"" || q == "'" || q == "`") {
+      rest = substr(rest, 2)
+      i = index(rest, q)
+      if (i == 0) return
+      v = substr(rest, 1, i - 1)
+      if (v ~ /[ \t]/) return
+    } else {
+      if (match(rest, /^[^ \t"'`,;]+/) == 0) return
+      v = clean(substr(rest, 1, RLENGTH))
+      if (is_code_expr(v)) return
+      # A bare identifier such as userPassword or String is a variable or a
+      # type, so identifier-shaped values need to be long and contain digits.
+      if (v ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && (length(v) < 8 || v !~ /[0-9]/)) return
+    }
+    if (is_placeholder(v) || is_code_expr(v)) return
+    if (t == "password") {
+      lv = tolower(v)
+      if (length(v) < 6) return
+      if (lv ~ /^(true|false|null|none|nil|undefined|required|optional|string|str)$/) return
       # Plain words are usually prose ("password: forgotten"), so require
       # at least one character that is not a letter.
-      case "$v" in *[!A-Za-z]*) ;; *) return 1 ;; esac
-      ;;
-  esac
-  return 0
+      if (v !~ /[^A-Za-z]/) return
+      record(t, "password assignment", m, length(v), 1)
+    } else {
+      # A generic SECRET/TOKEN/API_KEY assignment is only flagged when the
+      # value is long and mixes character classes like a generated secret.
+      if (length(v) < 16 || v ~ /:\/\//) return
+      if (v !~ /[0-9]/ || v !~ /[A-Za-z]/) {
+        if (!(v ~ /[A-Z]/ && v ~ /[a-z]/ && length(v) >= 20)) return
+      }
+      # Lower case words joined by - . or / are slugs and paths.
+      if (v ~ /^[a-z0-9._\/-]+$/ && v ~ /[._\/-]/) return
+      record(t, "secret environment variable", m, length(v), 1)
+    }
+  }
 }
 
-found_types=""
-first_mask=""
-
-record() {
-  local label=$1 match=$2 value=$3
-  case "$found_types" in
-    *"$label"*) ;;
-    *) found_types="${found_types:+$found_types, }$label" ;;
-  esac
-  if [ -z "$first_mask" ]; then
-    first_mask="starts with \"${match:0:4}\", secret length ${#value}"
-  fi
+# Runs one rule over a chunk. re is the pattern; when icase is set the
+# match runs against the lower-cased chunk ls and the text is taken from s.
+function scan(t, re, s, ls, icase, prev,    hay, off, pos, m) {
+  if (t in done || count[t] >= MAXM) return
+  hay = icase ? ls : s
+  off = 0
+  while (count[t] < MAXM && match(hay, re)) {
+    pos = off + RSTART
+    m = substr(s, pos, RLENGTH)
+    count[t]++
+    check(t, m, s, pos, prev)
+    if (t in done) return
+    off += RSTART + RLENGTH - 1
+    if (RLENGTH < 1) off++
+    hay = substr(hay, RSTART + (RLENGTH > 0 ? RLENGTH : 1))
+  }
 }
 
-# Scans the prompt for one pattern.
-#   $1 type id, $2 human label, $3 "i" for case-insensitive or "-",
-#   $4 extended regex, $5 optional sed -E expression that extracts the
-#   secret value from the full match.
-scan() {
-  local type=$1 label=$2 icase=$3 re=$4 extract=${5:-}
-  local flags=-oE
-  [ "$icase" = "i" ] && flags=-oiE
-  local matches m v
-  matches=$(printf '%s\n' "$prompt" | grep $flags -- "$re" 2>/dev/null) || return 0
-  while IFS= read -r m; do
-    [ -z "$m" ] && continue
-    v=$m
-    [ -n "$extract" ] && v=$(printf '%s' "$m" | sed -E "$extract")
-    # Strip quotes and trailing punctuation that the pattern may include.
-    v=${v%\"}; v=${v#\"}; v=${v%\'}; v=${v#\'}
-    v=${v%,}; v=${v%;}; v=${v%\"}; v=${v%\'}
-    is_placeholder "$v" && continue
-    passes_type_check "$type" "$v" || continue
-    record "$label" "$m" "$v"
-    return 0
-  done <<EOF
-$matches
-EOF
-  return 0
+function scan_chunk(s, prev,    ls) {
+  ls = tolower(s)
+  if (index(s, "AKIA") || index(s, "ASIA")) {
+    aws_ctx = NR_LINE
+    scan("aws_key", "(AKIA|ASIA)[0-9A-Z]+", s, ls, 0, prev)
+  }
+  if (index(ls, "aws")) {
+    scan("aws_secret", "aws_?secret(_access)?(_key)?[\"']?[ \t]*[:=][ \t]*[\"']?[a-z0-9/+=]+", s, ls, 1, prev)
+    aws_ctx = NR_LINE
+  }
+  if (aws_ctx && NR_LINE - aws_ctx <= 3) scan("aws_secret_bare", "[A-Za-z0-9/+=]+", s, ls, 0, prev)
+  if (index(s, "gh")) scan("github", "gh[pousr]_[A-Za-z0-9]+", s, ls, 0, prev)
+  if (index(s, "github_pat_")) scan("github_pat", "github_pat_[A-Za-z0-9_]+", s, ls, 0, prev)
+  if (index(s, "glpat-")) scan("gitlab", "glpat-[A-Za-z0-9_-]+", s, ls, 0, prev)
+  if (index(s, "sk-")) {
+    scan("anthropic", "sk-ant-[A-Za-z0-9_-]+", s, ls, 0, prev)
+    scan("openai", "sk-[A-Za-z0-9_-]+", s, ls, 0, prev)
+  }
+  if (index(s, "k_live_") || index(s, "k_test_")) scan("stripe", "(sk|rk)_(live|test)_[A-Za-z0-9]+", s, ls, 0, prev)
+  if (index(s, "whsec_")) scan("stripe_whsec", "whsec_[A-Za-z0-9+/=]+", s, ls, 0, prev)
+  if (index(s, "xox")) scan("slack", "xox[baprs]-[A-Za-z0-9-]+", s, ls, 0, prev)
+  if (index(s, "AIza")) scan("google", "AIza[0-9A-Za-z_-]+", s, ls, 0, prev)
+  if (index(s, "nvapi-")) scan("nvidia", "nvapi-[A-Za-z0-9_-]+", s, ls, 0, prev)
+  if (index(s, "hf_")) scan("huggingface", "hf_[A-Za-z0-9]+", s, ls, 0, prev)
+  if (index(s, "sb_secret_")) scan("supabase", "sb_secret_[A-Za-z0-9_-]+", s, ls, 0, prev)
+  if (index(s, "eyJ")) scan("jwt", "eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", s, ls, 0, prev)
+  if (index(s, "://")) scan("db_url", "[A-Za-z][A-Za-z0-9+.-]*://[^:/ \t@\"]+:[^@ \t\"/]+@", s, ls, 0, prev)
+  if (index(ls, "passw")) scan("password", "passw(or)?d[\"'`]?[ \t]*(:=|[:=])[ \t]*", s, ls, 1, prev)
+  if (s ~ /SECRET|TOKEN|API_?KEY|PRIVATE_KEY|SERVICE_ROLE|ACCESS_KEY/) \
+    scan("env_secret", "(SECRET|TOKEN|API_KEY|APIKEY|PRIVATE_KEY|SERVICE_ROLE|ACCESS_KEY)[A-Z0-9_]*[\"']?[ \t]*=[ \t]*", s, ls, 0, prev)
 }
 
-scan aws_key "AWS access key ID" - '(AKIA|ASIA)[0-9A-Z]{16}'
-scan aws_secret "AWS secret access key" i \
-  'aws_?secret(_access)?(_key)?["'\'']?[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9/+=]{40}' \
-  's/.*(.{40})$/\1/'
-scan github "GitHub token" - 'gh[pousr]_[A-Za-z0-9]{36,}'
-scan github "GitHub token" - 'github_pat_[A-Za-z0-9_]{22,}'
-scan anthropic "Anthropic API key" - 'sk-ant-[A-Za-z0-9_-]{20,}'
-scan openai "OpenAI API key" - 'sk-(proj-)?[A-Za-z0-9_-]{20,}'
-scan stripe "Stripe secret or restricted key" - '(sk|rk)_(live|test)_[A-Za-z0-9]{10,}'
-scan slack "Slack token" - 'xox[baprs]-[A-Za-z0-9-]{10,}'
-scan google "Google API key" - 'AIza[0-9A-Za-z_-]{35}'
-scan nvidia "NVIDIA API key" - 'nvapi-[A-Za-z0-9_-]{20,}'
-scan jwt "JWT (for example a Supabase key)" - \
-  'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
-scan db_url "database URL with an inline password" i \
-  '[a-z][a-z0-9+.-]*://[^:/[:space:]@"]+:[^@[:space:]"/]+@' \
-  's#^[^:]+://[^:]+:(.*)@$#\1#'
-scan password "password assignment" i \
-  'password["'\'']?[[:space:]]*[:=][[:space:]]*[^[:space:]]+' \
-  's/^[^:=]*[:=][[:space:]]*//'
+# Scans one line of the prompt, in overlapping chunks when it is long.
+function scan_line(line,    n, start, chunk, prev, hpos, rest) {
+  NR_LINE++
+  if (index(line, "#allow-secret")) allowed = 1
+  # A private key header only counts when key material follows it, so that
+  # questions about the PEM format are not blocked.
+  if (!("private_key" in done)) {
+    if (in_key) {
+      if (line !~ /-----/ && line ~ /[A-Za-z0-9+\/=][A-Za-z0-9+\/=][A-Za-z0-9+\/=][A-Za-z0-9+\/=][A-Za-z0-9+\/=]/) {
+        rest = line; gsub(/[^A-Za-z0-9+\/=]/, " ", rest)
+        if (longest_run(rest) >= 40) record("private_key", "private key block", key_header, "unknown", 0)
+      }
+    }
+    if (index(line, "PRIVATE KEY-----") && match(line, /-----BEGIN [A-Z ]*PRIVATE KEY-----/)) {
+      in_key = 1
+      key_header = substr(line, RSTART, RLENGTH)
+      rest = substr(line, RSTART + RLENGTH); gsub(/-----[A-Z ]+-----/, " ", rest)
+      gsub(/[^A-Za-z0-9+\/=]/, " ", rest)
+      if (longest_run(rest) >= 40) record("private_key", "private key block", key_header, "unknown", 0)
+    }
+  }
+  n = length(line)
+  if (n <= CHUNK + OVERLAP) { scan_chunk(line, ""); return }
+  for (start = 1; start <= n; start += CHUNK) {
+    chunk = substr(line, start, CHUNK + OVERLAP)
+    prev = (start > 1) ? substr(line, start - 1, 1) : ""
+    scan_chunk(chunk, prev)
+  }
+}
 
-# A private key header only counts when key material follows it, so that
-# questions about the PEM format are not blocked.
-if printf '%s\n' "$prompt" | grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'; then
-  if printf '%s\n' "$prompt" | sed -E 's/-----[A-Z ]+-----//g' | grep -qE '[A-Za-z0-9+/=]{40,}'; then
-    header=$(printf '%s\n' "$prompt" | grep -oE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' | head -n 1)
-    [ -z "$first_mask" ] && first_mask="starts with \"${header:0:4}\", key material follows the header"
-    record "private key block" "$header" "$prompt"
-  fi
+function longest_run(s,    n, parts, i, best) {
+  n = split(s, parts, / +/); best = 0
+  for (i = 1; i <= n; i++) if (length(parts[i]) > best) best = length(parts[i])
+  return best
+}
+
+# Without jq the hook input is raw JSON. This extracts and decodes the
+# prompt string. Unicode escapes are left as they are, which the patterns
+# tolerate. If the prompt key cannot be found, the whole input is scanned.
+function decode_prompt(doc,    i, rest, j) {
+  gsub(/\\\\/, "\001", doc)
+  gsub(/\\"/, "\002", doc)
+  if (match(doc, /"prompt"[ \t\r\n]*:[ \t\r\n]*"/)) {
+    rest = substr(doc, RSTART + RLENGTH)
+    j = index(rest, "\"")
+    if (j > 0) doc = substr(rest, 1, j - 1)
+    else doc = rest
+  }
+  gsub(/\\n/, "\n", doc)
+  gsub(/\\r/, "", doc)
+  gsub(/\\t/, "\t", doc)
+  gsub(/\\\//, "/", doc)
+  gsub(/\002/, "\"", doc)
+  gsub(/\001/, "\\", doc)
+  return doc
+}
+
+BEGIN {
+  MAXM = 5000; CHUNK = 4096; OVERLAP = 512
+  found = ""; first_mask = ""; allowed = 0; NR_LINE = 0; aws_ctx = 0; in_key = 0
+}
+
+mode == "json" { raw = (NR == 1) ? $0 : raw "\n" $0; next }
+{ scan_line($0) }
+
+END {
+  if (mode == "json") {
+    text = decode_prompt(raw)
+    n = split(text, lines, "\n")
+    for (k = 1; k <= n; k++) scan_line(lines[k])
+  }
+  if (found != "" && !allowed) printf "%s\t%s\n", found, first_mask
+}
+AWK
+
+if have_jq; then
+  result=$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null |
+    LC_ALL=C awk -v mode=text "$SCANNER")
+else
+  result=$(printf '%s\n' "$input" | LC_ALL=C awk -v mode=json "$SCANNER")
 fi
 
-[ -z "$found_types" ] && exit 0
+[ -z "$result" ] && exit 0
+found_types=${result%%$'\t'*}
+first_mask=${result#*$'\t'}
 
-reason="Blocked: this prompt appears to contain a credential ($found_types; $first_mask). It was not sent to Claude. If the credential is real, rotate it now, because it may already be in your terminal scrollback or shell history. Keep secrets in environment variables or your shell profile and refer to them by name instead of pasting them. If this is a false positive, resend the prompt with #allow-secret anywhere in it."
+reason="Blocked: this prompt appears to contain a credential ($found_types; $first_mask). It was not sent to Claude. If the credential is real, rotate it now, because it may already be in your terminal scrollback, in Claude Code's local prompt history, or in your shell history. Keep secrets in environment variables or your shell profile and refer to them by name instead of pasting them. If this is a false positive, resend the prompt with #allow-secret anywhere in it."
 
-printf '{"decision": "block", "reason": %s}\n' "$(json_str "$reason")"
+printf '{"decision": "block", "reason": %s, "hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "suppressOriginalPrompt": true}}\n' \
+  "$(json_str "$reason")"
 exit 0
