@@ -105,13 +105,18 @@ scope_ignore = config.get("scope_ignore", []) + [".claude/**"]
 
 def sh(cmd):
     """Run a shell command from config; return (exit_code, combined tail)."""
-    p = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    # Command output may contain arbitrary bytes; never let decoding crash the gate.
+    p = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     out = (p.stdout or "") + (p.stderr or "")
     tail = out.strip().splitlines()[-25:]
     return p.returncode, tail
 
 def git(*args):
-    p = subprocess.run(["git", *args], capture_output=True, text=True)
+    # Output can be file content (git show), which may be binary or not UTF-8, so
+    # decode leniently instead of raising UnicodeDecodeError.
+    p = subprocess.run(["git", *args], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     return p.returncode, p.stdout, p.stderr
 
 # ---- glob matching (supports ** ; anchored to full repo-relative path) --------
@@ -252,6 +257,11 @@ SKIP_RES = [
 def count(text, regexes):
     return sum(len(rx.findall(text)) for rx in regexes)
 
+def is_binary(text):
+    """Git's own heuristic: a NUL byte means binary. Binary files hold no test cases
+    or skip markers, so they are only checked for deletion, never parsed as text."""
+    return "\0" in text
+
 # With BUILD_DIFF_BASE, compare against it so tests merged in by dependencies are
 # protected as well; otherwise against base_ref (unchanged default).
 tamper_ref = os.environ.get("DIFF_BASE") or base_ref
@@ -269,6 +279,8 @@ for f in base_test_files:
         continue
     with open(f, encoding="utf-8", errors="replace") as fh:
         head_content = fh.read()
+    if is_binary(base_content) or is_binary(head_content):
+        continue
     base_cases, head_cases = count(base_content, TEST_CASE_RES), count(head_content, TEST_CASE_RES)
     if head_cases < base_cases:
         tamper.append({"file": f, "issue": f"test cases removed ({base_cases} → {head_cases})"})
